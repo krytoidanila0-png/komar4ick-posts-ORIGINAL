@@ -7,20 +7,14 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- Анимированный фон с двоичным кодом -->
   <div class="matrix-bg" id="matrix"></div>
 
-  <!-- Шапка -->
   <header>
     <h1>&gt; Komar4ick posts _</h1>
-    <div id="auth-area">
-      <!-- Здесь будет форма входа/регистрации или кнопка выхода -->
-    </div>
+    <div id="auth-area"></div>
   </header>
 
-  <!-- Основной контент -->
   <main>
-    <!-- Блок для добавления новости (виден только авторизованным) -->
     <section id="add-post-section" style="display: none;">
       <h2>&gt; Новая запись</h2>
       <form id="add-post-form">
@@ -30,14 +24,12 @@
       </form>
     </section>
 
-    <!-- Лента новостей -->
     <section id="posts-section">
       <h2>&gt; Последние записи</h2>
       <div id="posts-container">Загрузка...</div>
     </section>
   </main>
 
-  <!-- Подключение Firebase (ваш конфиг) -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-app.js";
     import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-analytics.js";
@@ -59,12 +51,10 @@
     const auth = getAuth(app);
     const db = getFirestore(app);
 
-    // Делаем доступными глобально
     window.auth = auth;
     window.db = db;
   </script>
 
-  <!-- Основной скрипт -->
   <script type="module" src="app.js"></script>
 </body>
 </html>

@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Хакерские новости</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Анимированный фон с двоичным кодом -->
+  <div class="matrix-bg" id="matrix"></div>
+
+  <!-- Шапка -->
+  <header>
+    <h1>&gt; HACKER NEWS _</h1>
+    <div id="auth-area">
+      <!-- Здесь будет форма входа/регистрации или кнопка выхода -->
+    </div>
+  </header>
+
+  <!-- Основной контент -->
+  <main>
+    <!-- Блок для добавления новости (виден только авторизованным) -->
+    <section id="add-post-section" style="display: none;">
+      <h2>&gt; Новая запись</h2>
+      <form id="add-post-form">
+        <input type="text" id="post-title" placeholder="Заголовок" required>
+        <textarea id="post-content" placeholder="Текст новости..." rows="4" required></textarea>
+        <button type="submit">Опубликовать</button>
+      </form>
+    </section>
+
+    <!-- Лента новостей -->
+    <section id="posts-section">
+      <h2>&gt; Последние новости</h2>
+      <div id="posts-container">Загрузка...</div>
+    </section>
+  </main>
+
+  <!-- Подключение Firebase (ваш конфиг) -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-app.js";
+    import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-analytics.js";
+    import { getAuth } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-auth.js";
+    import { getFirestore } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyC-sGE3Qn5owt3ONP7hP2fYwY3YVFgtPDA",
+      authDomain: "brain-of-my-site.firebaseapp.com",
+      projectId: "brain-of-my-site",
+      storageBucket: "brain-of-my-site.firebasestorage.app",
+      messagingSenderId: "460499128127",
+      appId: "1:460499128127:web:cb4b3afbd902caecac0d8a",
+      measurementId: "G-2GYGZVMX9H"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const analytics = getAnalytics(app);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    // Делаем доступными глобально
+    window.auth = auth;
+    window.db = db;
+  </script>
+
+  <!-- Основной скрипт -->
+  <script type="module" src="app.js"></script>
+</body>
+</html>

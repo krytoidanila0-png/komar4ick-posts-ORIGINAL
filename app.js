@@ -1,154 +1,171 @@
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
+// Импорт функций Firebase (используем глобальные объекты из window)
+import { 
+  getAuth, 
+  createUserWithEmailAndPassword, 
+  signInWithEmailAndPassword, 
+  signOut, 
+  onAuthStateChanged,
+  GoogleAuthProvider,
+  signInWithPopup
+} from "https://www.gstatic.com/firebasejs/12.12.0/firebase-auth.js";
 
-body {
-  background-color: #0a0f0a;
-  color: #0f0;
-  font-family: 'Courier New', Courier, monospace;
-  line-height: 1.5;
-  min-height: 100vh;
-  position: relative;
-  padding: 20px;
-}
+import { 
+  getFirestore, 
+  collection, 
+  addDoc, 
+  getDocs, 
+  query, 
+  orderBy, 
+  serverTimestamp 
+} from "https://www.gstatic.com/firebasejs/12.12.0/firebase-firestore.js";
 
-/* Анимация матрицы */
-.matrix-bg {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  z-index: -1;
-  opacity: 0.15;
-  overflow: hidden;
-}
+const auth = window.auth;
+const db = window.db;
 
-.matrix-bg span {
-  position: absolute;
-  color: #0f0;
-  font-size: 1.2rem;
-  white-space: nowrap;
-  animation: fall linear infinite;
-}
+// DOM элементы
+const authArea = document.getElementById('auth-area');
+const addPostSection = document.getElementById('add-post-section');
+const postsContainer = document.getElementById('posts-container');
+const addPostForm = document.getElementById('add-post-form');
 
-@keyframes fall {
-  0% { transform: translateY(-100%); }
-  100% { transform: translateY(100vh); }
-}
-
-/* Шапка */
-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-bottom: 2px solid #0f0;
-  padding-bottom: 10px;
-  margin-bottom: 30px;
-  flex-wrap: wrap;
-  gap: 15px;
-}
-
-h1, h2 {
-  font-weight: normal;
-  text-shadow: 0 0 5px #0f0;
-}
-
-h1 {
-  font-size: 2rem;
-}
-
-h2 {
-  margin-bottom: 15px;
-  border-left: 3px solid #0f0;
-  padding-left: 10px;
-}
-
-/* Формы и кнопки */
-input, textarea, button {
-  background: #111;
-  border: 1px solid #0f0;
-  color: #0f0;
-  font-family: inherit;
-  padding: 8px 12px;
-  border-radius: 4px;
-  outline: none;
-}
-
-input:focus, textarea:focus {
-  box-shadow: 0 0 8px #0f0;
-}
-
-button {
-  cursor: pointer;
-  background: #0f0;
-  color: #000;
-  font-weight: bold;
-  transition: 0.2s;
-}
-
-button:hover {
-  background: #0c0;
-  box-shadow: 0 0 10px #0f0;
-}
-
-#auth-area {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-/* Карточки постов */
-.post-card {
-  border: 1px solid #0f0;
-  padding: 15px;
-  margin-bottom: 20px;
-  background: rgba(0, 20, 0, 0.7);
-  border-radius: 5px;
-}
-
-.post-title {
-  font-size: 1.4rem;
-  margin-bottom: 8px;
-}
-
-.post-meta {
-  font-size: 0.8rem;
-  color: #0a0;
-  margin-bottom: 10px;
-}
-
-.post-content {
-  white-space: pre-wrap;
-}
-
-/* Секция добавления поста */
-#add-post-section {
-  margin-bottom: 30px;
-  padding: 20px;
-  border: 1px dashed #0f0;
-  border-radius: 5px;
-}
-
-#add-post-form {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-#add-post-form input,
-#add-post-form textarea {
-  width: 100%;
-}
-
-/* Адаптив */
-@media (max-width: 600px) {
-  header {
-    flex-direction: column;
-    align-items: start;
+// -------------------- Анимация матрицы --------------------
+function createMatrixRain() {
+  const bg = document.getElementById('matrix');
+  const spanCount = 40;
+  for (let i = 0; i < spanCount; i++) {
+    const span = document.createElement('span');
+    span.style.left = Math.random() * 100 + '%';
+    span.style.animationDuration = (Math.random() * 5 + 5) + 's';
+    span.style.animationDelay = Math.random() * 5 + 's';
+    span.textContent = Array.from({ length: 20 }, () => Math.round(Math.random())).join('');
+    bg.appendChild(span);
   }
 }
+createMatrixRain();
+
+// -------------------- Аутентификация UI --------------------
+function renderAuthUI(user) {
+  if (user) {
+    // Пользователь вошёл
+    authArea.innerHTML = `
+      <span>${user.email}</span>
+      <button id="logout-btn">Выйти</button>
+    `;
+    document.getElementById('logout-btn').addEventListener('click', async () => {
+      await signOut(auth);
+    });
+    addPostSection.style.display = 'block';
+  } else {
+    // Гость — интерфейс с кнопкой Google
+    authArea.innerHTML = `
+      <input type="email" id="login-email" placeholder="Email" size="15">
+      <input type="password" id="login-password" placeholder="Пароль" size="10">
+      <button id="login-btn">Войти</button>
+      <button id="signup-btn">Регистрация</button>
+      <button id="google-login-btn">Войти через Google</button>
+    `;
+    addPostSection.style.display = 'none';
+
+    // Вход по email
+    document.getElementById('login-btn').addEventListener('click', async () => {
+      const email = document.getElementById('login-email').value;
+      const password = document.getElementById('login-password').value;
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+      } catch (error) {
+        alert('Ошибка входа: ' + error.message);
+      }
+    });
+
+    // Регистрация
+    document.getElementById('signup-btn').addEventListener('click', async () => {
+      const email = document.getElementById('login-email').value;
+      const password = document.getElementById('login-password').value;
+      try {
+        await createUserWithEmailAndPassword(auth, email, password);
+      } catch (error) {
+        alert('Ошибка регистрации: ' + error.message);
+      }
+    });
+
+    // Вход через Google
+    document.getElementById('google-login-btn').addEventListener('click', async () => {
+      const provider = new GoogleAuthProvider();
+      try {
+        await signInWithPopup(auth, provider);
+        // UI обновится автоматически через onAuthStateChanged
+      } catch (error) {
+        console.error("Ошибка входа через Google:", error);
+        alert('Ошибка входа через Google: ' + error.message);
+      }
+    });
+  }
+}
+
+// -------------------- Загрузка постов --------------------
+async function loadPosts() {
+  postsContainer.innerHTML = 'Загрузка...';
+  try {
+    const q = query(collection(db, "posts"), orderBy("createdAt", "desc"));
+    const snapshot = await getDocs(q);
+    if (snapshot.empty) {
+      postsContainer.innerHTML = '<p>Записей пока нет. Будьте первым!</p>';
+      return;
+    }
+    let html = '';
+    snapshot.forEach(doc => {
+      const post = doc.data();
+      html += `
+        <div class="post-card">
+          <div class="post-title">${escapeHtml(post.title)}</div>
+          <div class="post-meta">${post.author || 'Аноним'} | ${post.createdAt ? new Date(post.createdAt.toDate()).toLocaleString() : ''}</div>
+          <div class="post-content">${escapeHtml(post.content)}</div>
+        </div>
+      `;
+    });
+    postsContainer.innerHTML = html;
+  } catch (error) {
+    console.error(error);
+    postsContainer.innerHTML = '<p>Ошибка загрузки записей.</p>';
+  }
+}
+
+// Простейшая защита от XSS
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// -------------------- Добавление поста --------------------
+addPostForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const user = auth.currentUser;
+  if (!user) {
+    alert('Войдите, чтобы публиковать');
+    return;
+  }
+
+  const title = document.getElementById('post-title').value.trim();
+  const content = document.getElementById('post-content').value.trim();
+  if (!title || !content) return;
+
+  try {
+    await addDoc(collection(db, "posts"), {
+      title,
+      content,
+      author: user.email,
+      createdAt: serverTimestamp()
+    });
+    addPostForm.reset();
+    loadPosts(); // обновить ленту
+  } catch (error) {
+    alert('Ошибка: ' + error.message);
+  }
+});
+
+// -------------------- Отслеживание состояния входа --------------------
+onAuthStateChanged(auth, (user) => {
+  renderAuthUI(user);
+  loadPosts();
+});

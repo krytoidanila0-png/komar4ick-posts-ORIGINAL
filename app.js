@@ -28,7 +28,6 @@ const auth = window.auth;
 const db = window.db;
 const ADMIN_EMAIL = 'krytoidanila0@gmail.com';
 
-// DOM элементы
 const authArea = document.getElementById('auth-area');
 const addPostSection = document.getElementById('add-post-section');
 const postsContainer = document.getElementById('posts-container');
@@ -56,7 +55,6 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-// Получить или создать профиль пользователя с никнеймом
 async function getUserProfile(user) {
   if (!user) return null;
   const userRef = doc(db, "users", user.uid);
@@ -64,7 +62,6 @@ async function getUserProfile(user) {
   if (userSnap.exists()) {
     return userSnap.data();
   } else {
-    // Создаём профиль, используя displayName из Google или email
     let username = user.displayName || user.email.split('@')[0];
     const profile = {
       uid: user.uid,
@@ -77,90 +74,92 @@ async function getUserProfile(user) {
   }
 }
 
-// -------------------- Аутентификация UI --------------------
-function renderAuthUI(user) {
+async function getUserProfileById(uid) {
+  const docRef = doc(db, "users", uid);
+  const snap = await getDoc(docRef);
+  return snap.exists() ? snap.data() : null;
+}
+
+// -------------------- Рендеринг интерфейса --------------------
+async function renderAuthUI(user) {
   if (user) {
-    // Определяем отображаемое имя
-    getUserProfile(user).then(profile => {
-      const displayName = profile?.username || user.email;
-      authArea.innerHTML = `
-        <span>${escapeHtml(displayName)}</span>
-        <button id="logout-btn">Выйти</button>
-      `;
-    });
-    
+    const profile = await getUserProfile(user);
+    const displayName = profile?.username || user.email;
+    authArea.innerHTML = `
+      <span>${escapeHtml(displayName)}</span>
+      <button id="logout-btn">Выйти</button>
+    `;
     document.getElementById('logout-btn').addEventListener('click', async () => {
       await signOut(auth);
     });
-    
     addPostSection.style.display = (user.email === ADMIN_EMAIL) ? 'block' : 'none';
   } else {
     authArea.innerHTML = `
-      <input type="email" id="login-email" placeholder="Email" size="15">
-      <input type="password" id="login-password" placeholder="Пароль" size="10">
-      <input type="text" id="signup-username" placeholder="Никнейм (для регистрации)" size="12" style="display:none;">
-      <button id="login-btn">Войти</button>
-      <button id="signup-btn">Регистрация</button>
-      <button id="google-login-btn">Войти через Google</button>
+      <div id="auth-forms">
+        <input type="email" id="login-email" placeholder="Email" size="15">
+        <input type="password" id="login-password" placeholder="Пароль" size="10">
+        <input type="text" id="signup-username" placeholder="Никнейм" size="12" style="display:none;">
+        <button id="login-btn">Войти</button>
+        <button id="signup-btn">Регистрация</button>
+        <button id="google-login-btn">Войти через Google</button>
+      </div>
     `;
     addPostSection.style.display = 'none';
+    attachGuestEventListeners();
+  }
+}
 
-    const loginBtn = document.getElementById('login-btn');
-    const signupBtn = document.getElementById('signup-btn');
-    const usernameInput = document.getElementById('signup-username');
-    
-    // Показываем поле ника при регистрации
-    signupBtn.addEventListener('click', () => {
+function attachGuestEventListeners() {
+  const loginBtn = document.getElementById('login-btn');
+  const signupBtn = document.getElementById('signup-btn');
+  const googleBtn = document.getElementById('google-login-btn');
+  const emailInput = document.getElementById('login-email');
+  const passInput = document.getElementById('login-password');
+  const usernameInput = document.getElementById('signup-username');
+
+  loginBtn.addEventListener('click', async () => {
+    try {
+      await signInWithEmailAndPassword(auth, emailInput.value, passInput.value);
+    } catch (error) {
+      alert('Ошибка входа: ' + error.message);
+    }
+  });
+
+  signupBtn.addEventListener('click', async () => {
+    // Переключаем кнопку на режим подтверждения
+    if (signupBtn.textContent === 'Регистрация') {
       usernameInput.style.display = 'inline-block';
       signupBtn.textContent = 'Подтвердить';
-      signupBtn.id = 'confirm-signup-btn';
-      
-      document.getElementById('confirm-signup-btn').addEventListener('click', async () => {
-        const email = document.getElementById('login-email').value;
-        const password = document.getElementById('login-password').value;
-        const username = usernameInput.value.trim();
-        if (!username) {
-          alert('Введите никнейм');
-          return;
-        }
-        try {
-          const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-          // Сохраняем никнейм в профиле
-          await setDoc(doc(db, "users", userCredential.user.uid), {
-            uid: userCredential.user.uid,
-            email: email,
-            username: username,
-            createdAt: serverTimestamp()
-          });
-          await updateProfile(userCredential.user, { displayName: username });
-        } catch (error) {
-          alert('Ошибка регистрации: ' + error.message);
-        }
-      }, { once: true });
-    });
-
-    loginBtn.addEventListener('click', async () => {
-      const email = document.getElementById('login-email').value;
-      const password = document.getElementById('login-password').value;
-      try {
-        await signInWithEmailAndPassword(auth, email, password);
-      } catch (error) {
-        alert('Ошибка входа: ' + error.message);
+    } else {
+      const username = usernameInput.value.trim();
+      if (!username) {
+        alert('Введите никнейм');
+        return;
       }
-    });
-
-    document.getElementById('google-login-btn').addEventListener('click', async () => {
-      const provider = new GoogleAuthProvider();
       try {
-        const result = await signInWithPopup(auth, provider);
-        // При первом входе создаём профиль с именем из Google
-        await getUserProfile(result.user);
+        const userCredential = await createUserWithEmailAndPassword(auth, emailInput.value, passInput.value);
+        await setDoc(doc(db, "users", userCredential.user.uid), {
+          uid: userCredential.user.uid,
+          email: emailInput.value,
+          username: username,
+          createdAt: serverTimestamp()
+        });
+        await updateProfile(userCredential.user, { displayName: username });
       } catch (error) {
-        console.error("Ошибка входа через Google:", error);
-        alert('Ошибка входа через Google: ' + error.message);
+        alert('Ошибка регистрации: ' + error.message);
       }
-    });
-  }
+    }
+  });
+
+  googleBtn.addEventListener('click', async () => {
+    const provider = new GoogleAuthProvider();
+    try {
+      const result = await signInWithPopup(auth, provider);
+      await getUserProfile(result.user);
+    } catch (error) {
+      alert('Ошибка входа через Google: ' + error.message);
+    }
+  });
 }
 
 // -------------------- Загрузка постов --------------------
@@ -182,14 +181,12 @@ async function loadPosts() {
       const post = docSnap.data();
       const postId = docSnap.id;
       
-      // Получаем профиль автора поста (чтобы показать ник)
       let authorName = post.authorEmail;
       if (post.authorId) {
         const authorProfile = await getUserProfileById(post.authorId);
         if (authorProfile) authorName = authorProfile.username || authorProfile.email;
       }
       
-      // Лайки
       const likesQuery = query(collection(db, "likes"), where("postId", "==", postId));
       const likesSnapshot = await getDocs(likesQuery);
       const likesCount = likesSnapshot.size;
@@ -204,7 +201,6 @@ async function loadPosts() {
         userLiked = !(await getDocs(userLikeQuery)).empty;
       }
       
-      // Комментарии
       const commentsQuery = query(
         collection(db, "comments"), 
         where("postId", "==", postId),
@@ -261,21 +257,14 @@ async function loadPosts() {
       `;
     }
     postsContainer.innerHTML = html;
-    attachEventListeners();
+    attachPostEventListeners();
   } catch (error) {
     console.error(error);
     postsContainer.innerHTML = '<p>Ошибка загрузки записей.</p>';
   }
 }
 
-async function getUserProfileById(uid) {
-  const docRef = doc(db, "users", uid);
-  const snap = await getDoc(docRef);
-  return snap.exists() ? snap.data() : null;
-}
-
-// -------------------- Обработчики событий --------------------
-function attachEventListeners() {
+function attachPostEventListeners() {
   // Лайки
   document.querySelectorAll('.like-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
@@ -349,7 +338,6 @@ function attachEventListeners() {
       if (!confirm('Удалить эту запись навсегда?')) return;
       try {
         await deleteDoc(doc(db, "posts", postId));
-        // Удаляем связанные лайки и комментарии
         const likesQuery = query(collection(db, "likes"), where("postId", "==", postId));
         (await getDocs(likesQuery)).forEach(async d => await deleteDoc(doc(db, "likes", d.id)));
         const commentsQuery = query(collection(db, "comments"), where("postId", "==", postId));
@@ -388,7 +376,7 @@ addPostForm.addEventListener('submit', async (e) => {
   }
 });
 
-// -------------------- Отслеживание состояния входа --------------------
+// -------------------- Отслеживание состояния --------------------
 onAuthStateChanged(auth, (user) => {
   renderAuthUI(user);
   loadPosts();

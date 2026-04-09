@@ -54,7 +54,6 @@ createMatrixRain();
 // -------------------- Аутентификация UI --------------------
 function renderAuthUI(user) {
   if (user) {
-    // Пользователь вошёл
     authArea.innerHTML = `
       <span>${user.email}</span>
       <button id="logout-btn">Выйти</button>
@@ -63,14 +62,13 @@ function renderAuthUI(user) {
       await signOut(auth);
     });
     
-    // Показываем форму добавления поста ТОЛЬКО админу
+    // Показываем форму добавления поста только админу
     if (user.email === ADMIN_EMAIL) {
       addPostSection.style.display = 'block';
     } else {
       addPostSection.style.display = 'none';
     }
   } else {
-    // Гость
     authArea.innerHTML = `
       <input type="email" id="login-email" placeholder="Email" size="15">
       <input type="password" id="login-password" placeholder="Пароль" size="10">
@@ -112,10 +110,11 @@ function renderAuthUI(user) {
   }
 }
 
-// -------------------- Загрузка постов с лайками и комментариями --------------------
+// -------------------- Загрузка постов с лайками, комментариями и удалением --------------------
 async function loadPosts() {
   postsContainer.innerHTML = 'Загрузка...';
   const user = auth.currentUser;
+  const isAdmin = user && user.email === ADMIN_EMAIL;
   
   try {
     const q = query(collection(db, "posts"), orderBy("createdAt", "desc"));
@@ -160,7 +159,10 @@ async function loadPosts() {
       // Генерируем HTML для поста
       html += `
         <div class="post-card" data-post-id="${postId}">
-          <div class="post-title">${escapeHtml(post.title)}</div>
+          <div class="post-header">
+            <div class="post-title">${escapeHtml(post.title)}</div>
+            ${isAdmin ? `<button class="delete-post-btn" data-post-id="${postId}" title="Удалить запись">🗑️</button>` : ''}
+          </div>
           <div class="post-meta">${post.author || 'Аноним'} | ${post.createdAt ? new Date(post.createdAt.toDate()).toLocaleString() : ''}</div>
           <div class="post-content">${escapeHtml(post.content)}</div>
           
@@ -192,7 +194,7 @@ async function loadPosts() {
     }
     postsContainer.innerHTML = html;
     
-    // Добавляем обработчики событий после рендеринга
+    // Добавляем обработчики событий
     attachEventListeners();
     
   } catch (error) {
@@ -207,7 +209,7 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-// -------------------- Обработчики событий для динамических элементов --------------------
+// -------------------- Обработчики событий --------------------
 function attachEventListeners() {
   // Лайки
   document.querySelectorAll('.like-btn').forEach(btn => {
@@ -222,7 +224,6 @@ function attachEventListeners() {
       const postId = btn.dataset.postId;
       const likesCountSpan = btn.querySelector('.likes-count');
       
-      // Проверяем, есть ли уже лайк
       const likeQuery = query(
         collection(db, "likes"),
         where("postId", "==", postId),
@@ -231,7 +232,6 @@ function attachEventListeners() {
       const snapshot = await getDocs(likeQuery);
       
       if (snapshot.empty) {
-        // Добавляем лайк
         await addDoc(collection(db, "likes"), {
           postId,
           userId: user.uid,
@@ -240,7 +240,6 @@ function attachEventListeners() {
         btn.classList.add('liked');
         likesCountSpan.textContent = parseInt(likesCountSpan.textContent) + 1;
       } else {
-        // Удаляем лайк
         const likeDoc = snapshot.docs[0];
         await deleteDoc(doc(db, "likes", likeDoc.id));
         btn.classList.remove('liked');
@@ -273,9 +272,46 @@ function attachEventListeners() {
           createdAt: serverTimestamp()
         });
         input.value = '';
-        loadPosts(); // перезагружаем, чтобы показать новый комментарий
+        loadPosts(); // перезагружаем
       } catch (error) {
         alert('Ошибка: ' + error.message);
+      }
+    });
+  });
+
+  // Удаление постов (только для админа)
+  document.querySelectorAll('.delete-post-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const user = auth.currentUser;
+      if (!user || user.email !== ADMIN_EMAIL) {
+        alert('Только администратор может удалять посты');
+        return;
+      }
+      
+      const postId = btn.dataset.postId;
+      if (!confirm('Удалить эту запись навсегда?')) return;
+      
+      try {
+        // Удаляем сам пост
+        await deleteDoc(doc(db, "posts", postId));
+        
+        // Удаляем связанные лайки и комментарии (опционально, можно оставить, но для чистоты лучше удалить)
+        const likesQuery = query(collection(db, "likes"), where("postId", "==", postId));
+        const likesSnapshot = await getDocs(likesQuery);
+        likesSnapshot.forEach(async (likeDoc) => {
+          await deleteDoc(doc(db, "likes", likeDoc.id));
+        });
+        
+        const commentsQuery = query(collection(db, "comments"), where("postId", "==", postId));
+        const commentsSnapshot = await getDocs(commentsQuery);
+        commentsSnapshot.forEach(async (commDoc) => {
+          await deleteDoc(doc(db, "comments", commDoc.id));
+        });
+        
+        loadPosts(); // обновляем ленту
+      } catch (error) {
+        alert('Ошибка удаления: ' + error.message);
       }
     });
   });

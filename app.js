@@ -1,4 +1,3 @@
-// Импорт функций Firebase
 import { 
   getAuth, 
   createUserWithEmailAndPassword, 
@@ -6,7 +5,8 @@ import {
   signOut, 
   onAuthStateChanged,
   GoogleAuthProvider,
-  signInWithPopup
+  signInWithPopup,
+  updateProfile
 } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-auth.js";
 
 import { 
@@ -18,16 +18,14 @@ import {
   orderBy, 
   serverTimestamp,
   doc,
-  updateDoc,
-  increment,
   where,
-  deleteDoc
+  deleteDoc,
+  setDoc,
+  getDoc
 } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-firestore.js";
 
 const auth = window.auth;
 const db = window.db;
-
-// Админский email
 const ADMIN_EMAIL = 'krytoidanila0@gmail.com';
 
 // DOM элементы
@@ -51,34 +49,97 @@ function createMatrixRain() {
 }
 createMatrixRain();
 
+// -------------------- Вспомогательные функции --------------------
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// Получить или создать профиль пользователя с никнеймом
+async function getUserProfile(user) {
+  if (!user) return null;
+  const userRef = doc(db, "users", user.uid);
+  const userSnap = await getDoc(userRef);
+  if (userSnap.exists()) {
+    return userSnap.data();
+  } else {
+    // Создаём профиль, используя displayName из Google или email
+    let username = user.displayName || user.email.split('@')[0];
+    const profile = {
+      uid: user.uid,
+      email: user.email,
+      username: username,
+      createdAt: serverTimestamp()
+    };
+    await setDoc(userRef, profile);
+    return profile;
+  }
+}
+
 // -------------------- Аутентификация UI --------------------
 function renderAuthUI(user) {
   if (user) {
-    authArea.innerHTML = `
-      <span>${user.email}</span>
-      <button id="logout-btn">Выйти</button>
-    `;
+    // Определяем отображаемое имя
+    getUserProfile(user).then(profile => {
+      const displayName = profile?.username || user.email;
+      authArea.innerHTML = `
+        <span>${escapeHtml(displayName)}</span>
+        <button id="logout-btn">Выйти</button>
+      `;
+    });
+    
     document.getElementById('logout-btn').addEventListener('click', async () => {
       await signOut(auth);
     });
     
-    // Показываем форму добавления поста только админу
-    if (user.email === ADMIN_EMAIL) {
-      addPostSection.style.display = 'block';
-    } else {
-      addPostSection.style.display = 'none';
-    }
+    addPostSection.style.display = (user.email === ADMIN_EMAIL) ? 'block' : 'none';
   } else {
     authArea.innerHTML = `
       <input type="email" id="login-email" placeholder="Email" size="15">
       <input type="password" id="login-password" placeholder="Пароль" size="10">
+      <input type="text" id="signup-username" placeholder="Никнейм (для регистрации)" size="12" style="display:none;">
       <button id="login-btn">Войти</button>
       <button id="signup-btn">Регистрация</button>
       <button id="google-login-btn">Войти через Google</button>
     `;
     addPostSection.style.display = 'none';
 
-    document.getElementById('login-btn').addEventListener('click', async () => {
+    const loginBtn = document.getElementById('login-btn');
+    const signupBtn = document.getElementById('signup-btn');
+    const usernameInput = document.getElementById('signup-username');
+    
+    // Показываем поле ника при регистрации
+    signupBtn.addEventListener('click', () => {
+      usernameInput.style.display = 'inline-block';
+      signupBtn.textContent = 'Подтвердить';
+      signupBtn.id = 'confirm-signup-btn';
+      
+      document.getElementById('confirm-signup-btn').addEventListener('click', async () => {
+        const email = document.getElementById('login-email').value;
+        const password = document.getElementById('login-password').value;
+        const username = usernameInput.value.trim();
+        if (!username) {
+          alert('Введите никнейм');
+          return;
+        }
+        try {
+          const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+          // Сохраняем никнейм в профиле
+          await setDoc(doc(db, "users", userCredential.user.uid), {
+            uid: userCredential.user.uid,
+            email: email,
+            username: username,
+            createdAt: serverTimestamp()
+          });
+          await updateProfile(userCredential.user, { displayName: username });
+        } catch (error) {
+          alert('Ошибка регистрации: ' + error.message);
+        }
+      }, { once: true });
+    });
+
+    loginBtn.addEventListener('click', async () => {
       const email = document.getElementById('login-email').value;
       const password = document.getElementById('login-password').value;
       try {
@@ -88,20 +149,12 @@ function renderAuthUI(user) {
       }
     });
 
-    document.getElementById('signup-btn').addEventListener('click', async () => {
-      const email = document.getElementById('login-email').value;
-      const password = document.getElementById('login-password').value;
-      try {
-        await createUserWithEmailAndPassword(auth, email, password);
-      } catch (error) {
-        alert('Ошибка регистрации: ' + error.message);
-      }
-    });
-
     document.getElementById('google-login-btn').addEventListener('click', async () => {
       const provider = new GoogleAuthProvider();
       try {
-        await signInWithPopup(auth, provider);
+        const result = await signInWithPopup(auth, provider);
+        // При первом входе создаём профиль с именем из Google
+        await getUserProfile(result.user);
       } catch (error) {
         console.error("Ошибка входа через Google:", error);
         alert('Ошибка входа через Google: ' + error.message);
@@ -110,7 +163,7 @@ function renderAuthUI(user) {
   }
 }
 
-// -------------------- Загрузка постов с лайками, комментариями и удалением --------------------
+// -------------------- Загрузка постов --------------------
 async function loadPosts() {
   postsContainer.innerHTML = 'Загрузка...';
   const user = auth.currentUser;
@@ -129,12 +182,18 @@ async function loadPosts() {
       const post = docSnap.data();
       const postId = docSnap.id;
       
-      // Получаем количество лайков
+      // Получаем профиль автора поста (чтобы показать ник)
+      let authorName = post.authorEmail;
+      if (post.authorId) {
+        const authorProfile = await getUserProfileById(post.authorId);
+        if (authorProfile) authorName = authorProfile.username || authorProfile.email;
+      }
+      
+      // Лайки
       const likesQuery = query(collection(db, "likes"), where("postId", "==", postId));
       const likesSnapshot = await getDocs(likesQuery);
       const likesCount = likesSnapshot.size;
       
-      // Проверяем, лайкнул ли текущий пользователь
       let userLiked = false;
       if (user) {
         const userLikeQuery = query(
@@ -142,11 +201,10 @@ async function loadPosts() {
           where("postId", "==", postId),
           where("userId", "==", user.uid)
         );
-        const userLikeSnapshot = await getDocs(userLikeQuery);
-        userLiked = !userLikeSnapshot.empty;
+        userLiked = !(await getDocs(userLikeQuery)).empty;
       }
       
-      // Получаем комментарии
+      // Комментарии
       const commentsQuery = query(
         collection(db, "comments"), 
         where("postId", "==", postId),
@@ -154,16 +212,26 @@ async function loadPosts() {
       );
       const commentsSnapshot = await getDocs(commentsQuery);
       const comments = [];
-      commentsSnapshot.forEach(comm => comments.push(comm.data()));
+      for (const commDoc of commentsSnapshot.docs) {
+        const comm = commDoc.data();
+        let commentAuthor = comm.authorEmail;
+        if (comm.userId) {
+          const profile = await getUserProfileById(comm.userId);
+          if (profile) commentAuthor = profile.username || profile.email;
+        }
+        comments.push({
+          ...comm,
+          authorName: commentAuthor
+        });
+      }
       
-      // Генерируем HTML для поста
       html += `
         <div class="post-card" data-post-id="${postId}">
           <div class="post-header">
             <div class="post-title">${escapeHtml(post.title)}</div>
             ${isAdmin ? `<button class="delete-post-btn" data-post-id="${postId}" title="Удалить запись">🗑️</button>` : ''}
           </div>
-          <div class="post-meta">${post.author || 'Аноним'} | ${post.createdAt ? new Date(post.createdAt.toDate()).toLocaleString() : ''}</div>
+          <div class="post-meta">${escapeHtml(authorName)} | ${post.createdAt ? new Date(post.createdAt.toDate()).toLocaleString() : ''}</div>
           <div class="post-content">${escapeHtml(post.content)}</div>
           
           <div class="post-actions">
@@ -176,7 +244,7 @@ async function loadPosts() {
             <div class="comments-list">
               ${comments.map(c => `
                 <div class="comment">
-                  <span class="comment-author">${escapeHtml(c.authorEmail || 'Аноним')}</span>
+                  <span class="comment-author">${escapeHtml(c.authorName)}</span>
                   <span class="comment-text">${escapeHtml(c.text)}</span>
                   <span class="comment-time">${c.createdAt ? new Date(c.createdAt.toDate()).toLocaleString() : ''}</span>
                 </div>
@@ -193,20 +261,17 @@ async function loadPosts() {
       `;
     }
     postsContainer.innerHTML = html;
-    
-    // Добавляем обработчики событий
     attachEventListeners();
-    
   } catch (error) {
     console.error(error);
     postsContainer.innerHTML = '<p>Ошибка загрузки записей.</p>';
   }
 }
 
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
+async function getUserProfileById(uid) {
+  const docRef = doc(db, "users", uid);
+  const snap = await getDoc(docRef);
+  return snap.exists() ? snap.data() : null;
 }
 
 // -------------------- Обработчики событий --------------------
@@ -220,17 +285,14 @@ function attachEventListeners() {
         alert('Войдите, чтобы ставить лайки');
         return;
       }
-      
       const postId = btn.dataset.postId;
       const likesCountSpan = btn.querySelector('.likes-count');
-      
       const likeQuery = query(
         collection(db, "likes"),
         where("postId", "==", postId),
         where("userId", "==", user.uid)
       );
       const snapshot = await getDocs(likeQuery);
-      
       if (snapshot.empty) {
         await addDoc(collection(db, "likes"), {
           postId,
@@ -257,12 +319,10 @@ function attachEventListeners() {
         alert('Войдите, чтобы комментировать');
         return;
       }
-      
       const postId = form.dataset.postId;
       const input = form.querySelector('.comment-input');
       const text = input.value.trim();
       if (!text) return;
-      
       try {
         await addDoc(collection(db, "comments"), {
           postId,
@@ -272,44 +332,29 @@ function attachEventListeners() {
           createdAt: serverTimestamp()
         });
         input.value = '';
-        loadPosts(); // перезагружаем
+        loadPosts();
       } catch (error) {
         alert('Ошибка: ' + error.message);
       }
     });
   });
 
-  // Удаление постов (только для админа)
+  // Удаление постов
   document.querySelectorAll('.delete-post-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.preventDefault();
       const user = auth.currentUser;
-      if (!user || user.email !== ADMIN_EMAIL) {
-        alert('Только администратор может удалять посты');
-        return;
-      }
-      
+      if (!user || user.email !== ADMIN_EMAIL) return;
       const postId = btn.dataset.postId;
       if (!confirm('Удалить эту запись навсегда?')) return;
-      
       try {
-        // Удаляем сам пост
         await deleteDoc(doc(db, "posts", postId));
-        
-        // Удаляем связанные лайки и комментарии (опционально, можно оставить, но для чистоты лучше удалить)
+        // Удаляем связанные лайки и комментарии
         const likesQuery = query(collection(db, "likes"), where("postId", "==", postId));
-        const likesSnapshot = await getDocs(likesQuery);
-        likesSnapshot.forEach(async (likeDoc) => {
-          await deleteDoc(doc(db, "likes", likeDoc.id));
-        });
-        
+        (await getDocs(likesQuery)).forEach(async d => await deleteDoc(doc(db, "likes", d.id)));
         const commentsQuery = query(collection(db, "comments"), where("postId", "==", postId));
-        const commentsSnapshot = await getDocs(commentsQuery);
-        commentsSnapshot.forEach(async (commDoc) => {
-          await deleteDoc(doc(db, "comments", commDoc.id));
-        });
-        
-        loadPosts(); // обновляем ленту
+        (await getDocs(commentsQuery)).forEach(async d => await deleteDoc(doc(db, "comments", d.id)));
+        loadPosts();
       } catch (error) {
         alert('Ошибка удаления: ' + error.message);
       }
@@ -317,29 +362,23 @@ function attachEventListeners() {
   });
 }
 
-// -------------------- Добавление поста (только админ) --------------------
+// -------------------- Добавление поста --------------------
 addPostForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const user = auth.currentUser;
-  if (!user) {
-    alert('Войдите, чтобы публиковать');
+  if (!user || user.email !== ADMIN_EMAIL) {
+    alert('Только администратор может публиковать');
     return;
   }
-  
-  if (user.email !== ADMIN_EMAIL) {
-    alert('Только администратор может публиковать записи');
-    return;
-  }
-
   const title = document.getElementById('post-title').value.trim();
   const content = document.getElementById('post-content').value.trim();
   if (!title || !content) return;
-
   try {
     await addDoc(collection(db, "posts"), {
       title,
       content,
-      author: user.email,
+      authorEmail: user.email,
+      authorId: user.uid,
       createdAt: serverTimestamp()
     });
     addPostForm.reset();

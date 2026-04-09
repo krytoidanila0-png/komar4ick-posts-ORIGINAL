@@ -20,6 +20,14 @@
       <form id="add-post-form">
         <input type="text" id="post-title" placeholder="Заголовок" required>
         <textarea id="post-content" placeholder="Текст новости..." rows="4" required></textarea>
+        
+        <!-- Поле для ссылки на медиа -->
+        <div class="media-url-area">
+          <label for="media-url">🔗 Ссылка на фото или видео (YouTube, прямая ссылка)</label>
+          <input type="url" id="media-url" placeholder="https://...">
+          <div id="media-preview" class="media-preview"></div>
+        </div>
+
         <button type="submit">Опубликовать</button>
       </form>
     </section>

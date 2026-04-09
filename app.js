@@ -1,4 +1,4 @@
-// Импорт функций Firebase (используем глобальные объекты из window)
+// Импорт функций Firebase
 import { 
   getAuth, 
   createUserWithEmailAndPassword, 
@@ -16,11 +16,19 @@ import {
   getDocs, 
   query, 
   orderBy, 
-  serverTimestamp 
+  serverTimestamp,
+  doc,
+  updateDoc,
+  increment,
+  where,
+  deleteDoc
 } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-firestore.js";
 
 const auth = window.auth;
 const db = window.db;
+
+// Админский email
+const ADMIN_EMAIL = 'krytoidanila0@gmail.com';
 
 // DOM элементы
 const authArea = document.getElementById('auth-area');
@@ -54,9 +62,15 @@ function renderAuthUI(user) {
     document.getElementById('logout-btn').addEventListener('click', async () => {
       await signOut(auth);
     });
-    addPostSection.style.display = 'block';
+    
+    // Показываем форму добавления поста ТОЛЬКО админу
+    if (user.email === ADMIN_EMAIL) {
+      addPostSection.style.display = 'block';
+    } else {
+      addPostSection.style.display = 'none';
+    }
   } else {
-    // Гость — интерфейс с кнопкой Google
+    // Гость
     authArea.innerHTML = `
       <input type="email" id="login-email" placeholder="Email" size="15">
       <input type="password" id="login-password" placeholder="Пароль" size="10">
@@ -66,7 +80,6 @@ function renderAuthUI(user) {
     `;
     addPostSection.style.display = 'none';
 
-    // Вход по email
     document.getElementById('login-btn').addEventListener('click', async () => {
       const email = document.getElementById('login-email').value;
       const password = document.getElementById('login-password').value;
@@ -77,7 +90,6 @@ function renderAuthUI(user) {
       }
     });
 
-    // Регистрация
     document.getElementById('signup-btn').addEventListener('click', async () => {
       const email = document.getElementById('login-email').value;
       const password = document.getElementById('login-password').value;
@@ -88,12 +100,10 @@ function renderAuthUI(user) {
       }
     });
 
-    // Вход через Google
     document.getElementById('google-login-btn').addEventListener('click', async () => {
       const provider = new GoogleAuthProvider();
       try {
         await signInWithPopup(auth, provider);
-        // UI обновится автоматически через onAuthStateChanged
       } catch (error) {
         console.error("Ошибка входа через Google:", error);
         alert('Ошибка входа через Google: ' + error.message);
@@ -102,9 +112,11 @@ function renderAuthUI(user) {
   }
 }
 
-// -------------------- Загрузка постов --------------------
+// -------------------- Загрузка постов с лайками и комментариями --------------------
 async function loadPosts() {
   postsContainer.innerHTML = 'Загрузка...';
+  const user = auth.currentUser;
+  
   try {
     const q = query(collection(db, "posts"), orderBy("createdAt", "desc"));
     const snapshot = await getDocs(q);
@@ -112,37 +124,174 @@ async function loadPosts() {
       postsContainer.innerHTML = '<p>Записей пока нет. Будьте первым!</p>';
       return;
     }
+    
     let html = '';
-    snapshot.forEach(doc => {
-      const post = doc.data();
+    for (const docSnap of snapshot.docs) {
+      const post = docSnap.data();
+      const postId = docSnap.id;
+      
+      // Получаем количество лайков
+      const likesQuery = query(collection(db, "likes"), where("postId", "==", postId));
+      const likesSnapshot = await getDocs(likesQuery);
+      const likesCount = likesSnapshot.size;
+      
+      // Проверяем, лайкнул ли текущий пользователь
+      let userLiked = false;
+      if (user) {
+        const userLikeQuery = query(
+          collection(db, "likes"), 
+          where("postId", "==", postId),
+          where("userId", "==", user.uid)
+        );
+        const userLikeSnapshot = await getDocs(userLikeQuery);
+        userLiked = !userLikeSnapshot.empty;
+      }
+      
+      // Получаем комментарии
+      const commentsQuery = query(
+        collection(db, "comments"), 
+        where("postId", "==", postId),
+        orderBy("createdAt", "asc")
+      );
+      const commentsSnapshot = await getDocs(commentsQuery);
+      const comments = [];
+      commentsSnapshot.forEach(comm => comments.push(comm.data()));
+      
+      // Генерируем HTML для поста
       html += `
-        <div class="post-card">
+        <div class="post-card" data-post-id="${postId}">
           <div class="post-title">${escapeHtml(post.title)}</div>
           <div class="post-meta">${post.author || 'Аноним'} | ${post.createdAt ? new Date(post.createdAt.toDate()).toLocaleString() : ''}</div>
           <div class="post-content">${escapeHtml(post.content)}</div>
+          
+          <div class="post-actions">
+            <button class="like-btn ${userLiked ? 'liked' : ''}" data-post-id="${postId}">
+              ❤️ <span class="likes-count">${likesCount}</span>
+            </button>
+          </div>
+          
+          <div class="comments-section">
+            <div class="comments-list">
+              ${comments.map(c => `
+                <div class="comment">
+                  <span class="comment-author">${escapeHtml(c.authorEmail || 'Аноним')}</span>
+                  <span class="comment-text">${escapeHtml(c.text)}</span>
+                  <span class="comment-time">${c.createdAt ? new Date(c.createdAt.toDate()).toLocaleString() : ''}</span>
+                </div>
+              `).join('')}
+            </div>
+            ${user ? `
+              <form class="add-comment-form" data-post-id="${postId}">
+                <input type="text" class="comment-input" placeholder="Ваш комментарий..." required>
+                <button type="submit">Отправить</button>
+              </form>
+            ` : '<p class="login-to-comment">Войдите, чтобы комментировать</p>'}
+          </div>
         </div>
       `;
-    });
+    }
     postsContainer.innerHTML = html;
+    
+    // Добавляем обработчики событий после рендеринга
+    attachEventListeners();
+    
   } catch (error) {
     console.error(error);
     postsContainer.innerHTML = '<p>Ошибка загрузки записей.</p>';
   }
 }
 
-// Простейшая защита от XSS
 function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
 }
 
-// -------------------- Добавление поста --------------------
+// -------------------- Обработчики событий для динамических элементов --------------------
+function attachEventListeners() {
+  // Лайки
+  document.querySelectorAll('.like-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const user = auth.currentUser;
+      if (!user) {
+        alert('Войдите, чтобы ставить лайки');
+        return;
+      }
+      
+      const postId = btn.dataset.postId;
+      const likesCountSpan = btn.querySelector('.likes-count');
+      
+      // Проверяем, есть ли уже лайк
+      const likeQuery = query(
+        collection(db, "likes"),
+        where("postId", "==", postId),
+        where("userId", "==", user.uid)
+      );
+      const snapshot = await getDocs(likeQuery);
+      
+      if (snapshot.empty) {
+        // Добавляем лайк
+        await addDoc(collection(db, "likes"), {
+          postId,
+          userId: user.uid,
+          createdAt: serverTimestamp()
+        });
+        btn.classList.add('liked');
+        likesCountSpan.textContent = parseInt(likesCountSpan.textContent) + 1;
+      } else {
+        // Удаляем лайк
+        const likeDoc = snapshot.docs[0];
+        await deleteDoc(doc(db, "likes", likeDoc.id));
+        btn.classList.remove('liked');
+        likesCountSpan.textContent = parseInt(likesCountSpan.textContent) - 1;
+      }
+    });
+  });
+  
+  // Комментарии
+  document.querySelectorAll('.add-comment-form').forEach(form => {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const user = auth.currentUser;
+      if (!user) {
+        alert('Войдите, чтобы комментировать');
+        return;
+      }
+      
+      const postId = form.dataset.postId;
+      const input = form.querySelector('.comment-input');
+      const text = input.value.trim();
+      if (!text) return;
+      
+      try {
+        await addDoc(collection(db, "comments"), {
+          postId,
+          text,
+          authorEmail: user.email,
+          userId: user.uid,
+          createdAt: serverTimestamp()
+        });
+        input.value = '';
+        loadPosts(); // перезагружаем, чтобы показать новый комментарий
+      } catch (error) {
+        alert('Ошибка: ' + error.message);
+      }
+    });
+  });
+}
+
+// -------------------- Добавление поста (только админ) --------------------
 addPostForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const user = auth.currentUser;
   if (!user) {
     alert('Войдите, чтобы публиковать');
+    return;
+  }
+  
+  if (user.email !== ADMIN_EMAIL) {
+    alert('Только администратор может публиковать записи');
     return;
   }
 
@@ -158,7 +307,7 @@ addPostForm.addEventListener('submit', async (e) => {
       createdAt: serverTimestamp()
     });
     addPostForm.reset();
-    loadPosts(); // обновить ленту
+    loadPosts();
   } catch (error) {
     alert('Ошибка: ' + error.message);
   }

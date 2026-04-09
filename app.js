@@ -32,6 +32,8 @@ const authArea = document.getElementById('auth-area');
 const addPostSection = document.getElementById('add-post-section');
 const postsContainer = document.getElementById('posts-container');
 const addPostForm = document.getElementById('add-post-form');
+const mediaUrlInput = document.getElementById('media-url');
+const mediaPreview = document.getElementById('media-preview');
 
 // -------------------- Анимация матрицы --------------------
 function createMatrixRain() {
@@ -80,6 +82,49 @@ async function getUserProfileById(uid) {
   return snap.exists() ? snap.data() : null;
 }
 
+// -------------------- Предпросмотр медиа по ссылке --------------------
+function renderMediaPreviewFromUrl(url) {
+  if (!url) {
+    mediaPreview.innerHTML = '';
+    return;
+  }
+
+  // YouTube
+  const youtubeRegex = /(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\n?#]+)/;
+  const ytMatch = url.match(youtubeRegex);
+  if (ytMatch) {
+    const videoId = ytMatch[1];
+    mediaPreview.innerHTML = `
+      <iframe width="100%" height="200" src="https://www.youtube.com/embed/${videoId}" 
+        frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen>
+      </iframe>
+    `;
+    return;
+  }
+
+  // Прямые ссылки на изображения и видео
+  const isImage = /\.(jpg|jpeg|png|gif|webp|svg)(\?.*)?$/i.test(url) || url.includes('image');
+  const isVideo = /\.(mp4|webm|ogg|mov)(\?.*)?$/i.test(url) || url.includes('video');
+
+  if (isImage) {
+    mediaPreview.innerHTML = `<img src="${escapeHtml(url)}" alt="Preview">`;
+  } else if (isVideo) {
+    mediaPreview.innerHTML = `
+      <video controls>
+        <source src="${escapeHtml(url)}">
+        Ваш браузер не поддерживает видео.
+      </video>
+    `;
+  } else {
+    mediaPreview.innerHTML = `<p>🔗 Ссылка добавлена. Предпросмотр недоступен.</p>`;
+  }
+}
+
+// Обработчик ввода URL
+mediaUrlInput.addEventListener('input', (e) => {
+  renderMediaPreviewFromUrl(e.target.value.trim());
+});
+
 // -------------------- Рендеринг интерфейса --------------------
 async function renderAuthUI(user) {
   if (user) {
@@ -126,7 +171,6 @@ function attachGuestEventListeners() {
   });
 
   signupBtn.addEventListener('click', async () => {
-    // Переключаем кнопку на режим подтверждения
     if (signupBtn.textContent === 'Регистрация') {
       usernameInput.style.display = 'inline-block';
       signupBtn.textContent = 'Подтвердить';
@@ -220,15 +264,44 @@ async function loadPosts() {
           authorName: commentAuthor
         });
       }
-      
+
+      // Формируем медиа-контент
+      let mediaHtml = '';
+      if (post.mediaUrl) {
+        const url = post.mediaUrl;
+        const youtubeRegex = /(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\n?#]+)/;
+        const ytMatch = url.match(youtubeRegex);
+        if (ytMatch) {
+          const videoId = ytMatch[1];
+          mediaHtml = `
+            <div class="post-media embed-video">
+              <iframe src="https://www.youtube.com/embed/${videoId}" 
+                frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen>
+              </iframe>
+            </div>
+          `;
+        } else {
+          const isImage = /\.(jpg|jpeg|png|gif|webp|svg)(\?.*)?$/i.test(url);
+          const isVideo = /\.(mp4|webm|ogg|mov)(\?.*)?$/i.test(url);
+          if (isImage) {
+            mediaHtml = `<img src="${escapeHtml(url)}" alt="Post media" class="post-media">`;
+          } else if (isVideo) {
+            mediaHtml = `<video controls class="post-media"><source src="${escapeHtml(url)}"></video>`;
+          } else {
+            mediaHtml = `<p><a href="${escapeHtml(url)}" target="_blank" style="color:#0f0;">🔗 Ссылка на материал</a></p>`;
+          }
+        }
+      }
+
       html += `
         <div class="post-card" data-post-id="${postId}">
           <div class="post-header">
             <div class="post-title">${escapeHtml(post.title)}</div>
-            ${isAdmin ? `<button class="delete-post-btn" data-post-id="${postId}" title="Удалить запись">🗑️</button>` : ''}
+            ${isAdmin ? `<button class="delete-post-btn" data-post-id="${postId}">🗑️</button>` : ''}
           </div>
           <div class="post-meta">${escapeHtml(authorName)} | ${post.createdAt ? new Date(post.createdAt.toDate()).toLocaleString() : ''}</div>
           <div class="post-content">${escapeHtml(post.content)}</div>
+          ${mediaHtml}
           
           <div class="post-actions">
             <button class="like-btn ${userLiked ? 'liked' : ''}" data-post-id="${postId}">
@@ -360,16 +433,21 @@ addPostForm.addEventListener('submit', async (e) => {
   }
   const title = document.getElementById('post-title').value.trim();
   const content = document.getElementById('post-content').value.trim();
+  const mediaUrl = mediaUrlInput.value.trim();
+  
   if (!title || !content) return;
+
   try {
     await addDoc(collection(db, "posts"), {
       title,
       content,
+      mediaUrl: mediaUrl || null,
       authorEmail: user.email,
       authorId: user.uid,
       createdAt: serverTimestamp()
     });
     addPostForm.reset();
+    mediaPreview.innerHTML = '';
     loadPosts();
   } catch (error) {
     alert('Ошибка: ' + error.message);

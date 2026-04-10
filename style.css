@@ -450,25 +450,23 @@ button:hover {
   h1 {
     font-size: 1.8rem;
   }
-  /* Версия в углу */
-.version-badge {
+  /* Версия в правом нижнем углу */
+.site-version {
   position: fixed;
-  bottom: 10px;
-  right: 15px;
+  bottom: 15px;
+  right: 20px;
   color: #0f0;
+  background: rgba(0, 20, 0, 0.7);
+  padding: 5px 12px;
   font-family: 'Courier New', Courier, monospace;
-  font-size: 0.8rem;
-  opacity: 0.6;
-  text-shadow: 0 0 5px #0f0;
-  background: rgba(0, 20, 0, 0.5);
-  padding: 4px 10px;
+  font-size: 0.9rem;
   border: 1px solid #0f0;
-  border-radius: 0;
-  letter-spacing: 1px;
+  box-shadow: 0 0 10px rgba(0, 255, 0, 0.3);
   z-index: 999;
-  pointer-events: none; /* чтобы не мешало кликам */
   backdrop-filter: blur(2px);
-  box-shadow: 0 0 8px rgba(0, 255, 0, 0.3);
+  letter-spacing: 1px;
+  pointer-events: none;  /* чтобы не мешала кликам */
+  text-shadow: 0 0 5px #0f0;
 }
 
 /* При наведении можно сделать чуть ярче, если убрать pointer-events */

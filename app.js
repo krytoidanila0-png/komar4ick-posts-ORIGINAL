@@ -53,7 +53,7 @@ const muteDurationInput = document.getElementById('mute-duration');
 const applyMuteBtn = document.getElementById('apply-mute-btn');
 const closeModalBtn = document.querySelector('.close-modal');
 
-let currentTargetUser = null;
+let currentTargetUser = null; // { uid, email, username, ip }
 
 // -------------------- Анимация матрицы --------------------
 function createMatrixRain() {
@@ -98,6 +98,7 @@ async function getUserProfile(user) {
 }
 
 async function getUserProfileById(uid) {
+  if (!uid) return null;
   const docRef = doc(db, "users", uid);
   const snap = await getDoc(docRef);
   return snap.exists() ? snap.data() : null;
@@ -125,6 +126,7 @@ async function isUserBanned(uid, email, ip) {
 }
 
 async function isUserMuted(uid) {
+  if (!uid) return false;
   const mutesSnapshot = await getDocs(query(collection(db, "mutes"), where("uid", "==", uid)));
   if (mutesSnapshot.empty) return false;
   const mute = mutesSnapshot.docs[0].data();
@@ -503,7 +505,19 @@ function attachPostEventListeners(admin, user) {
   });
 }
 
-// -------------------- Модерация --------------------
+// -------------------- Модерация (с автоматическим IP) --------------------
+async function showModModal(uid, email, username) {
+  currentTargetUser = { uid, email, username };
+  
+  // Получаем IP из профиля
+  const profile = await getUserProfileById(uid);
+  const ip = profile?.ip || 'неизвестен';
+  currentTargetUser.ip = ip;
+  
+  modalUserInfo.innerHTML = `${escapeHtml(username)} (${escapeHtml(email)})<br>IP: ${ip}`;
+  modal.style.display = 'flex';
+}
+
 function attachModerationListeners(admin, currentUser) {
   if (!admin && !currentUser) return;
   
@@ -513,11 +527,8 @@ function attachModerationListeners(admin, currentUser) {
       const email = el.dataset.email;
       if (!uid && !email) return;
       
-      currentTargetUser = { uid, email, username: el.textContent };
-      
       if (admin) {
-        modalUserInfo.textContent = `${currentTargetUser.username} (${currentTargetUser.email})`;
-        modal.style.display = 'flex';
+        await showModModal(uid, email, el.textContent);
       }
     });
   });
@@ -530,11 +541,11 @@ window.onclick = (e) => { if (e.target == modal) modal.style.display = 'none'; }
 modalBanBtn.onclick = async () => {
   if (!currentTargetUser) return;
   const reason = prompt('Причина бана (опционально):');
-  const ip = prompt('IP для бана (если известно, иначе оставьте пустым):');
+  
   const banData = {
     uid: currentTargetUser.uid || null,
     email: currentTargetUser.email || null,
-    ip: ip || null,
+    ip: currentTargetUser.ip || null,
     reason: reason || '',
     bannedAt: serverTimestamp(),
     bannedBy: auth.currentUser.email

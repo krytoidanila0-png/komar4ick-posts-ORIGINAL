@@ -21,16 +21,18 @@ import {
   where,
   deleteDoc,
   setDoc,
-  getDoc,
-  updateDoc,
-  arrayUnion,
-  arrayRemove,
-  limit
+  getDoc
 } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-firestore.js";
 
 const auth = window.auth;
 const db = window.db;
-const ADMIN_EMAIL = 'krytoidanila0@gmail.com';
+
+// --- СПИСОК АДМИНИСТРАТОРОВ ---
+const ADMIN_EMAILS = ['krytoidanila0@gmail.com', 'olenkakrasavica88@gmail.com'];
+
+function isAdmin(user) {
+  return user && ADMIN_EMAILS.includes(user.email);
+}
 
 // DOM элементы
 const authArea = document.getElementById('auth-area');
@@ -171,8 +173,10 @@ async function renderAuthUI(user) {
     document.getElementById('logout-btn').addEventListener('click', async () => {
       await signOut(auth);
     });
-    addPostSection.style.display = (user.email === ADMIN_EMAIL) ? 'block' : 'none';
-    adminPanel.style.display = (user.email === ADMIN_EMAIL) ? 'block' : 'none';
+    
+    const admin = isAdmin(user);
+    addPostSection.style.display = admin ? 'block' : 'none';
+    adminPanel.style.display = admin ? 'block' : 'none';
   } else {
     authArea.innerHTML = `
       <div id="auth-forms">
@@ -258,7 +262,7 @@ function attachGuestEventListeners() {
 async function loadPosts() {
   postsContainer.innerHTML = 'Загрузка...';
   const user = auth.currentUser;
-  const isAdmin = user && user.email === ADMIN_EMAIL;
+  const admin = isAdmin(user);
   
   try {
     const q = query(collection(db, "posts"), orderBy("createdAt", "desc"));
@@ -274,9 +278,8 @@ async function loadPosts() {
       const postId = docSnap.id;
       
       let authorName = post.authorEmail;
-      let authorUid = post.authorId;
-      if (authorUid) {
-        const authorProfile = await getUserProfileById(authorUid);
+      if (post.authorId) {
+        const authorProfile = await getUserProfileById(post.authorId);
         if (authorProfile) authorName = authorProfile.username || authorProfile.email;
       }
       
@@ -294,19 +297,19 @@ async function loadPosts() {
       for (const commDoc of commentsSnapshot.docs) {
         const comm = commDoc.data();
         let commentAuthor = comm.authorEmail;
-        let commentUid = comm.userId;
-        if (commentUid) {
-          const profile = await getUserProfileById(commentUid);
+        if (comm.userId) {
+          const profile = await getUserProfileById(comm.userId);
           if (profile) commentAuthor = profile.username || profile.email;
         }
         comments.push({
           id: commDoc.id,
           ...comm,
           authorName: commentAuthor,
-          authorUid: commentUid
+          authorUid: comm.userId
         });
       }
 
+      // Медиа
       let mediaHtml = '';
       if (post.mediaUrl) {
         const url = post.mediaUrl;
@@ -326,10 +329,10 @@ async function loadPosts() {
         <div class="post-card" data-post-id="${postId}">
           <div class="post-header">
             <div class="post-title">${escapeHtml(post.title)}</div>
-            ${isAdmin ? `<button class="delete-post-btn" data-post-id="${postId}">🗑️</button>` : ''}
+            ${admin ? `<button class="delete-post-btn" data-post-id="${postId}">🗑️</button>` : ''}
           </div>
           <div class="post-meta">
-            <span class="author-name" data-uid="${authorUid || ''}" data-email="${escapeHtml(post.authorEmail)}">${escapeHtml(authorName)}</span> | ${post.createdAt ? new Date(post.createdAt.toDate()).toLocaleString() : ''}
+            <span class="author-name" data-uid="${post.authorId || ''}" data-email="${escapeHtml(post.authorEmail)}">${escapeHtml(authorName)}</span> | ${post.createdAt ? new Date(post.createdAt.toDate()).toLocaleString() : ''}
           </div>
           <div class="post-content" data-full-content="${escapeHtml(post.content)}">
             ${escapeHtml(post.content)}
@@ -347,16 +350,11 @@ async function loadPosts() {
                   <span class="comment-author" data-uid="${c.authorUid || ''}" data-email="${escapeHtml(c.authorEmail)}">${escapeHtml(c.authorName)}</span>
                   <span class="comment-text">${escapeHtml(c.text)}</span>
                   <span class="comment-time">${c.createdAt ? new Date(c.createdAt.toDate()).toLocaleString() : ''}</span>
-                  ${(isAdmin || (user && user.uid === c.authorUid)) ? `<button class="comment-delete-btn" data-comment-id="${c.id}">🗑️</button>` : ''}
+                  ${(admin || (user && user.uid === c.authorUid)) ? `<button class="comment-delete-btn" data-comment-id="${c.id}">🗑️</button>` : ''}
                 </div>
               `).join('')}
             </div>
-            ${user ? `
-              <form class="add-comment-form" data-post-id="${postId}">
-                <input type="text" class="comment-input" placeholder="Ваш комментарий..." required>
-                <button type="submit">Отправить</button>
-              </form>
-            ` : '<p class="login-to-comment">Войдите, чтобы комментировать</p>'}
+            ${user ? `<form class="add-comment-form" data-post-id="${postId}"><input type="text" class="comment-input" placeholder="Ваш комментарий..." required><button type="submit">Отправить</button></form>` : '<p class="login-to-comment">Войдите, чтобы комментировать</p>'}
           </div>
         </div>
       `;
@@ -382,182 +380,150 @@ async function loadPosts() {
       }
     });
     
-    attachPostEventListeners();
-    attachModerationListeners(isAdmin, user);
+    attachPostEventListeners(admin, user);
+    attachModerationListeners(admin, user);
   } catch (error) {
     console.error(error);
     postsContainer.innerHTML = '<p>Ошибка загрузки записей.</p>';
   }
 }
 
-// -------------------- Обработчики событий (с мгновенным обновлением) --------------------
-function attachPostEventListeners() {
-  // Лайки (без перезагрузки)
+function attachPostEventListeners(admin, user) {
+  // Лайки
   document.querySelectorAll('.like-btn').forEach(btn => {
-    btn.removeEventListener('click', handleLikeClick);
-    btn.addEventListener('click', handleLikeClick);
-  });
-  
-  // Комментарии (отправка без перезагрузки)
-  document.querySelectorAll('.add-comment-form').forEach(form => {
-    form.removeEventListener('submit', handleCommentSubmit);
-    form.addEventListener('submit', handleCommentSubmit);
-  });
-
-  // Удаление постов (админ) — перезагрузка остаётся, т.к. пост большой
-  document.querySelectorAll('.delete-post-btn').forEach(btn => {
-    btn.removeEventListener('click', handlePostDelete);
-    btn.addEventListener('click', handlePostDelete);
-  });
-
-  // Удаление комментариев (мгновенное)
-  document.querySelectorAll('.comment-delete-btn').forEach(btn => {
-    btn.removeEventListener('click', handleCommentDelete);
-    btn.addEventListener('click', handleCommentDelete);
-  });
-}
-
-// Обработчик лайка (мгновенное обновление)
-async function handleLikeClick(e) {
-  e.preventDefault();
-  const btn = e.currentTarget;
-  const user = auth.currentUser;
-  if (!user) { alert('Войдите, чтобы ставить лайки'); return; }
-  if (await isUserMuted(user.uid)) { alert('Вы замучены и не можете ставить лайки'); return; }
-  
-  const postId = btn.dataset.postId;
-  const likesCountSpan = btn.querySelector('.likes-count');
-  const likeQuery = query(collection(db, "likes"), where("postId", "==", postId), where("userId", "==", user.uid));
-  const snapshot = await getDocs(likeQuery);
-  
-  if (snapshot.empty) {
-    await addDoc(collection(db, "likes"), { postId, userId: user.uid, createdAt: serverTimestamp() });
-    btn.classList.add('liked');
-    likesCountSpan.textContent = parseInt(likesCountSpan.textContent) + 1;
-  } else {
-    await deleteDoc(doc(db, "likes", snapshot.docs[0].id));
-    btn.classList.remove('liked');
-    likesCountSpan.textContent = parseInt(likesCountSpan.textContent) - 1;
-  }
-}
-
-// Обработчик отправки комментария (добавление без перезагрузки)
-async function handleCommentSubmit(e) {
-  e.preventDefault();
-  const form = e.currentTarget;
-  const user = auth.currentUser;
-  if (!user) { alert('Войдите, чтобы комментировать'); return; }
-  if (await isUserMuted(user.uid)) { alert('Вы замучены и не можете комментировать'); return; }
-  
-  const postId = form.dataset.postId;
-  const input = form.querySelector('.comment-input');
-  const text = input.value.trim();
-  if (!text) return;
-  
-  try {
-    const docRef = await addDoc(collection(db, "comments"), {
-      postId, text,
-      authorEmail: user.email,
-      userId: user.uid,
-      createdAt: serverTimestamp()
+    btn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      if (!user) { alert('Войдите, чтобы ставить лайки'); return; }
+      if (await isUserMuted(user.uid)) { alert('Вы замучены и не можете ставить лайки'); return; }
+      
+      const postId = btn.dataset.postId;
+      const likesCountSpan = btn.querySelector('.likes-count');
+      const likeQuery = query(collection(db, "likes"), where("postId", "==", postId), where("userId", "==", user.uid));
+      const snapshot = await getDocs(likeQuery);
+      if (snapshot.empty) {
+        await addDoc(collection(db, "likes"), { postId, userId: user.uid, createdAt: serverTimestamp() });
+        btn.classList.add('liked');
+        likesCountSpan.textContent = parseInt(likesCountSpan.textContent) + 1;
+      } else {
+        await deleteDoc(doc(db, "likes", snapshot.docs[0].id));
+        btn.classList.remove('liked');
+        likesCountSpan.textContent = parseInt(likesCountSpan.textContent) - 1;
+      }
     });
-    
-    // Получаем данные профиля для отображения
-    const profile = await getUserProfile(user);
-    const authorName = profile?.username || user.email;
-    
-    // Создаём элемент комментария и добавляем в список
-    const commentsList = document.querySelector(`.comments-list[data-post-id="${postId}"]`);
-    const commentDiv = document.createElement('div');
-    commentDiv.className = 'comment';
-    commentDiv.dataset.commentId = docRef.id;
-    commentDiv.innerHTML = `
-      <span class="comment-author" data-uid="${user.uid}" data-email="${escapeHtml(user.email)}">${escapeHtml(authorName)}</span>
-      <span class="comment-text">${escapeHtml(text)}</span>
-      <span class="comment-time">${new Date().toLocaleString()}</span>
-      <button class="comment-delete-btn" data-comment-id="${docRef.id}">🗑️</button>
-    `;
-    commentsList.appendChild(commentDiv);
-    
-    // Навешиваем обработчик удаления на новую кнопку
-    const deleteBtn = commentDiv.querySelector('.comment-delete-btn');
-    deleteBtn.addEventListener('click', handleCommentDelete);
-    
-    // Очищаем поле ввода
-    input.value = '';
-    
-    // Добавляем обработчик модерации (клик по автору)
-    const authorSpan = commentDiv.querySelector('.comment-author');
-    authorSpan.addEventListener('click', moderationClickHandler);
-  } catch (error) {
-    alert('Ошибка: ' + error.message);
-  }
-}
-
-// Удаление комментария (мгновенное)
-async function handleCommentDelete(e) {
-  e.preventDefault();
-  const btn = e.currentTarget;
-  const user = auth.currentUser;
-  if (!user) return;
+  });
   
-  const commentId = btn.dataset.commentId;
-  const commentDoc = await getDoc(doc(db, "comments", commentId));
-  if (!commentDoc.exists()) return;
-  const comment = commentDoc.data();
-  
-  // Проверка прав
-  if (user.uid !== comment.userId && user.email !== ADMIN_EMAIL) return;
-  if (!confirm('Удалить комментарий?')) return;
-  
-  await deleteDoc(doc(db, "comments", commentId));
-  
-  // Удаляем элемент из DOM
-  const commentDiv = btn.closest('.comment');
-  commentDiv.remove();
-}
+  // Комментарии (добавление)
+  document.querySelectorAll('.add-comment-form').forEach(form => {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!user) { alert('Войдите, чтобы комментировать'); return; }
+      if (await isUserMuted(user.uid)) { alert('Вы замучены и не можете комментировать'); return; }
+      
+      const postId = form.dataset.postId;
+      const input = form.querySelector('.comment-input');
+      const text = input.value.trim();
+      if (!text) return;
+      
+      try {
+        const docRef = await addDoc(collection(db, "comments"), {
+          postId, text,
+          authorEmail: user.email,
+          userId: user.uid,
+          createdAt: serverTimestamp()
+        });
+        input.value = '';
+        
+        // Оптимистичное обновление
+        const commentsList = document.querySelector(`.comments-list[data-post-id="${postId}"]`);
+        if (commentsList) {
+          const profile = await getUserProfile(user);
+          const authorName = profile?.username || user.email;
+          const commentHtml = `
+            <div class="comment" data-comment-id="${docRef.id}">
+              <span class="comment-author" data-uid="${user.uid}" data-email="${escapeHtml(user.email)}">${escapeHtml(authorName)}</span>
+              <span class="comment-text">${escapeHtml(text)}</span>
+              <span class="comment-time">только что</span>
+              ${(admin || (user && user.uid === user.uid)) ? `<button class="comment-delete-btn" data-comment-id="${docRef.id}">🗑️</button>` : ''}
+            </div>
+          `;
+          commentsList.insertAdjacentHTML('beforeend', commentHtml);
+          const newDeleteBtn = commentsList.querySelector(`.comment:last-child .comment-delete-btn`);
+          if (newDeleteBtn) {
+            newDeleteBtn.addEventListener('click', deleteCommentHandler);
+          }
+        }
+      } catch (error) {
+        alert('Ошибка: ' + error.message);
+      }
+    });
+  });
 
-// Удаление поста (с перезагрузкой — оставляем как есть)
-async function handlePostDelete(e) {
-  e.preventDefault();
-  const btn = e.currentTarget;
-  const user = auth.currentUser;
-  if (!user || user.email !== ADMIN_EMAIL) return;
-  const postId = btn.dataset.postId;
-  if (!confirm('Удалить эту запись навсегда?')) return;
-  try {
-    await deleteDoc(doc(db, "posts", postId));
-    const likesSnapshot = await getDocs(query(collection(db, "likes"), where("postId", "==", postId)));
-    likesSnapshot.forEach(async d => await deleteDoc(doc(db, "likes", d.id)));
-    const commentsSnapshot = await getDocs(query(collection(db, "comments"), where("postId", "==", postId)));
-    commentsSnapshot.forEach(async d => await deleteDoc(doc(db, "comments", d.id)));
-    loadPosts();
-  } catch (error) { alert('Ошибка удаления: ' + error.message); }
-}
+  // Удаление постов (с подтверждением)
+  document.querySelectorAll('.delete-post-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      if (!admin) return;
+      const postId = btn.dataset.postId;
+      if (!confirm('Удалить эту запись навсегда?')) return;
+      try {
+        await deleteDoc(doc(db, "posts", postId));
+        const likesSnapshot = await getDocs(query(collection(db, "likes"), where("postId", "==", postId)));
+        likesSnapshot.forEach(async d => await deleteDoc(doc(db, "likes", d.id)));
+        const commentsSnapshot = await getDocs(query(collection(db, "comments"), where("postId", "==", postId)));
+        commentsSnapshot.forEach(async d => await deleteDoc(doc(db, "comments", d.id)));
+        document.querySelector(`.post-card[data-post-id="${postId}"]`)?.remove();
+      } catch (error) { alert('Ошибка удаления: ' + error.message); }
+    });
+  });
 
-// -------------------- Модерация (клик по автору) --------------------
-function moderationClickHandler(e) {
-  const el = e.currentTarget;
-  const uid = el.dataset.uid;
-  const email = el.dataset.email;
-  if (!uid && !email) return;
-  currentTargetUser = { uid, email, username: el.textContent };
-  const user = auth.currentUser;
-  if (user && user.email === ADMIN_EMAIL) {
-    modalUserInfo.textContent = `${currentTargetUser.username} (${currentTargetUser.email})`;
-    modal.style.display = 'flex';
-  }
-}
+  // Удаление комментариев (без подтверждения)
+  const deleteCommentHandler = async (e) => {
+    e.preventDefault();
+    const btn = e.currentTarget;
+    const commentId = btn.dataset.commentId;
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
 
-function attachModerationListeners(isAdmin, currentUser) {
-  if (!isAdmin && !currentUser) return;
-  document.querySelectorAll('.comment-author, .author-name').forEach(el => {
-    el.removeEventListener('click', moderationClickHandler);
-    el.addEventListener('click', moderationClickHandler);
+    const commentDoc = await getDoc(doc(db, "comments", commentId));
+    if (!commentDoc.exists()) return;
+    const comment = commentDoc.data();
+    
+    if (currentUser.uid !== comment.userId && !isAdmin(currentUser)) return;
+    
+    try {
+      await deleteDoc(doc(db, "comments", commentId));
+      btn.closest('.comment')?.remove();
+    } catch (error) {
+      alert('Ошибка удаления: ' + error.message);
+    }
+  };
+
+  document.querySelectorAll('.comment-delete-btn').forEach(btn => {
+    btn.addEventListener('click', deleteCommentHandler);
   });
 }
 
-// -------------------- Модальное окно --------------------
+// -------------------- Модерация --------------------
+function attachModerationListeners(admin, currentUser) {
+  if (!admin && !currentUser) return;
+  
+  document.querySelectorAll('.comment-author, .author-name').forEach(el => {
+    el.addEventListener('click', async (e) => {
+      const uid = el.dataset.uid;
+      const email = el.dataset.email;
+      if (!uid && !email) return;
+      
+      currentTargetUser = { uid, email, username: el.textContent };
+      
+      if (admin) {
+        modalUserInfo.textContent = `${currentTargetUser.username} (${currentTargetUser.email})`;
+        modal.style.display = 'flex';
+      }
+    });
+  });
+}
+
+// Модальное окно
 closeModalBtn.onclick = () => modal.style.display = 'none';
 window.onclick = (e) => { if (e.target == modal) modal.style.display = 'none'; };
 
@@ -605,10 +571,10 @@ modalDeleteCommentsBtn.onclick = async () => {
   snapshot.forEach(async d => await deleteDoc(doc(db, "comments", d.id)));
   alert('Комментарии удалены');
   modal.style.display = 'none';
-  loadPosts(); // только тут нужна перезагрузка
+  loadPosts();
 };
 
-// Просмотр списков банов/мутов
+// Просмотр списков
 document.getElementById('show-bans-btn')?.addEventListener('click', async () => {
   const snapshot = await getDocs(collection(db, "bans"));
   let html = '<h3>Забаненные</h3><ul>';
@@ -650,7 +616,7 @@ document.getElementById('show-mutes-btn')?.addEventListener('click', async () =>
 addPostForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const user = auth.currentUser;
-  if (!user || user.email !== ADMIN_EMAIL) { alert('Только администратор может публиковать'); return; }
+  if (!isAdmin(user)) { alert('Только администратор может публиковать'); return; }
   const title = document.getElementById('post-title').value.trim();
   const content = document.getElementById('post-content').value.trim();
   const mediaUrl = mediaUrlInput.value.trim();

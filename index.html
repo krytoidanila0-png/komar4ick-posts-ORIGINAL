@@ -15,19 +15,26 @@
   </header>
 
   <main>
+    <!-- Блок админ-панели (скрыт по умолчанию) -->
+    <section id="admin-panel" style="display: none;">
+      <h2>&gt; Админ-панель</h2>
+      <div class="admin-controls">
+        <button id="show-bans-btn">📋 Список банов</button>
+        <button id="show-mutes-btn">🔇 Список мутов</button>
+      </div>
+      <div id="admin-lists"></div>
+    </section>
+
     <section id="add-post-section" style="display: none;">
       <h2>&gt; Новая запись</h2>
       <form id="add-post-form">
         <input type="text" id="post-title" placeholder="Заголовок" required>
         <textarea id="post-content" placeholder="Текст новости..." rows="4" required></textarea>
-        
-        <!-- Поле для ссылки на медиа -->
         <div class="media-url-area">
-          <label for="media-url">🔗 Ссылка на фото или видео (YouTube, прямая ссылка)</label>
+          <label for="media-url">🔗 Ссылка на фото или видео</label>
           <input type="url" id="media-url" placeholder="https://...">
           <div id="media-preview" class="media-preview"></div>
         </div>
-
         <button type="submit">Опубликовать</button>
       </form>
     </section>
@@ -37,6 +44,25 @@
       <div id="posts-container">Загрузка...</div>
     </section>
   </main>
+
+  <!-- Модальное окно для управления пользователем -->
+  <div id="mod-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <span class="close-modal">&times;</span>
+      <h3>Управление пользователем</h3>
+      <p id="modal-user-info"></p>
+      <div class="modal-actions">
+        <button id="modal-ban-btn">🚫 Забанить</button>
+        <button id="modal-mute-btn">🔇 Замутить</button>
+        <button id="modal-delete-comments-btn">🗑️ Удалить комментарии</button>
+      </div>
+      <div id="modal-mute-duration" style="display: none;">
+        <label>Длительность мута (минуты):</label>
+        <input type="number" id="mute-duration" min="1" value="60">
+        <button id="apply-mute-btn">Применить</button>
+      </div>
+    </div>
+  </div>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-app.js";

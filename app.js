@@ -27,14 +27,12 @@ import {
 const auth = window.auth;
 const db = window.db;
 
-// --- СПИСОК АДМИНИСТРАТОРОВ ---
 const ADMIN_EMAILS = ['krytoidanila0@gmail.com', 'olenkakrasavica88@gmail.com'];
 
 function isAdmin(user) {
   return user && ADMIN_EMAILS.includes(user.email);
 }
 
-// DOM элементы
 const authArea = document.getElementById('auth-area');
 const addPostSection = document.getElementById('add-post-section');
 const postsContainer = document.getElementById('posts-container');
@@ -53,9 +51,8 @@ const muteDurationInput = document.getElementById('mute-duration');
 const applyMuteBtn = document.getElementById('apply-mute-btn');
 const closeModalBtn = document.querySelector('.close-modal');
 
-let currentTargetUser = null; // { uid, email, username, ip }
+let currentTargetUser = null;
 
-// -------------------- Анимация матрицы --------------------
 function createMatrixRain() {
   const bg = document.getElementById('matrix');
   const spanCount = 40;
@@ -70,7 +67,6 @@ function createMatrixRain() {
 }
 createMatrixRain();
 
-// -------------------- Вспомогательные функции --------------------
 function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text;
@@ -133,7 +129,6 @@ async function isUserMuted(uid) {
   return mute.expiresAt.toMillis() > Date.now();
 }
 
-// -------------------- Предпросмотр медиа --------------------
 function renderMediaPreviewFromUrl(url) {
   if (!url) { mediaPreview.innerHTML = ''; return; }
   const youtubeRegex = /(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\n?#]+)/;
@@ -155,7 +150,6 @@ function renderMediaPreviewFromUrl(url) {
 }
 mediaUrlInput.addEventListener('input', (e) => renderMediaPreviewFromUrl(e.target.value.trim()));
 
-// -------------------- Аутентификация UI --------------------
 async function renderAuthUI(user) {
   if (user) {
     const ip = await getUserIP();
@@ -260,7 +254,6 @@ function attachGuestEventListeners() {
   });
 }
 
-// -------------------- Загрузка постов --------------------
 async function loadPosts() {
   postsContainer.innerHTML = 'Загрузка...';
   const user = auth.currentUser;
@@ -311,7 +304,6 @@ async function loadPosts() {
         });
       }
 
-      // Медиа
       let mediaHtml = '';
       if (post.mediaUrl) {
         const url = post.mediaUrl;
@@ -363,7 +355,6 @@ async function loadPosts() {
     }
     postsContainer.innerHTML = html;
     
-    // Сворачивание длинных постов
     document.querySelectorAll('.post-content').forEach(el => {
       const fullText = el.dataset.fullContent;
       if (fullText.length > 500) {
@@ -391,7 +382,6 @@ async function loadPosts() {
 }
 
 function attachPostEventListeners(admin, user) {
-  // Лайки
   document.querySelectorAll('.like-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.preventDefault();
@@ -414,7 +404,6 @@ function attachPostEventListeners(admin, user) {
     });
   });
   
-  // Комментарии (добавление)
   document.querySelectorAll('.add-comment-form').forEach(form => {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -435,7 +424,6 @@ function attachPostEventListeners(admin, user) {
         });
         input.value = '';
         
-        // Оптимистичное обновление
         const commentsList = document.querySelector(`.comments-list[data-post-id="${postId}"]`);
         if (commentsList) {
           const profile = await getUserProfile(user);
@@ -460,7 +448,6 @@ function attachPostEventListeners(admin, user) {
     });
   });
 
-  // Удаление постов (с подтверждением)
   document.querySelectorAll('.delete-post-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.preventDefault();
@@ -478,7 +465,6 @@ function attachPostEventListeners(admin, user) {
     });
   });
 
-  // Удаление комментариев (без подтверждения)
   const deleteCommentHandler = async (e) => {
     e.preventDefault();
     const btn = e.currentTarget;
@@ -505,15 +491,11 @@ function attachPostEventListeners(admin, user) {
   });
 }
 
-// -------------------- Модерация (с автоматическим IP) --------------------
 async function showModModal(uid, email, username) {
   currentTargetUser = { uid, email, username };
-  
-  // Получаем IP из профиля
   const profile = await getUserProfileById(uid);
   const ip = profile?.ip || 'неизвестен';
   currentTargetUser.ip = ip;
-  
   modalUserInfo.innerHTML = `${escapeHtml(username)} (${escapeHtml(email)})<br>IP: ${ip}`;
   modal.style.display = 'flex';
 }
@@ -534,7 +516,6 @@ function attachModerationListeners(admin, currentUser) {
   });
 }
 
-// Модальное окно
 closeModalBtn.onclick = () => modal.style.display = 'none';
 window.onclick = (e) => { if (e.target == modal) modal.style.display = 'none'; };
 
@@ -585,7 +566,6 @@ modalDeleteCommentsBtn.onclick = async () => {
   loadPosts();
 };
 
-// Просмотр списков
 document.getElementById('show-bans-btn')?.addEventListener('click', async () => {
   const snapshot = await getDocs(collection(db, "bans"));
   let html = '<h3>Забаненные</h3><ul>';
@@ -623,7 +603,6 @@ document.getElementById('show-mutes-btn')?.addEventListener('click', async () =>
   });
 });
 
-// -------------------- Добавление поста --------------------
 addPostForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const user = auth.currentUser;
@@ -645,7 +624,6 @@ addPostForm.addEventListener('submit', async (e) => {
   } catch (error) { alert('Ошибка: ' + error.message); }
 });
 
-// -------------------- Отслеживание состояния --------------------
 onAuthStateChanged(auth, (user) => {
   renderAuthUI(user);
   loadPosts();

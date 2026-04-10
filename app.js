@@ -51,7 +51,7 @@ const muteDurationInput = document.getElementById('mute-duration');
 const applyMuteBtn = document.getElementById('apply-mute-btn');
 const closeModalBtn = document.querySelector('.close-modal');
 
-let currentTargetUser = null; // { uid, email, username }
+let currentTargetUser = null;
 
 // -------------------- Анимация матрицы --------------------
 function createMatrixRain() {
@@ -88,7 +88,7 @@ async function getUserProfile(user) {
       email: user.email,
       username: username,
       createdAt: serverTimestamp(),
-      ip: await getUserIP() // сохраняем IP при регистрации
+      ip: await getUserIP()
     };
     await setDoc(userRef, profile);
     return profile;
@@ -101,7 +101,6 @@ async function getUserProfileById(uid) {
   return snap.exists() ? snap.data() : null;
 }
 
-// Получение IP пользователя (через публичный API)
 async function getUserIP() {
   try {
     const res = await fetch('https://api.ipify.org?format=json');
@@ -112,7 +111,6 @@ async function getUserIP() {
   }
 }
 
-// Проверка, забанен ли пользователь
 async function isUserBanned(uid, email, ip) {
   const bansSnapshot = await getDocs(collection(db, "bans"));
   for (const doc of bansSnapshot.docs) {
@@ -124,7 +122,6 @@ async function isUserBanned(uid, email, ip) {
   return null;
 }
 
-// Проверка, замучен ли пользователь
 async function isUserMuted(uid) {
   const mutesSnapshot = await getDocs(query(collection(db, "mutes"), where("uid", "==", uid)));
   if (mutesSnapshot.empty) return false;
@@ -157,7 +154,6 @@ mediaUrlInput.addEventListener('input', (e) => renderMediaPreviewFromUrl(e.targe
 // -------------------- Аутентификация UI --------------------
 async function renderAuthUI(user) {
   if (user) {
-    // Проверка бана перед отображением
     const ip = await getUserIP();
     const ban = await isUserBanned(user.uid, user.email, ip);
     if (ban) {
@@ -205,7 +201,6 @@ function attachGuestEventListeners() {
   loginBtn.addEventListener('click', async () => {
     try {
       const userCredential = await signInWithEmailAndPassword(auth, emailInput.value, passInput.value);
-      // Проверка бана при входе
       const ip = await getUserIP();
       const ban = await isUserBanned(userCredential.user.uid, userCredential.user.email, ip);
       if (ban) {
@@ -259,7 +254,7 @@ function attachGuestEventListeners() {
   });
 }
 
-// -------------------- Загрузка постов со сворачиванием --------------------
+// -------------------- Загрузка постов --------------------
 async function loadPosts() {
   postsContainer.innerHTML = 'Загрузка...';
   const user = auth.currentUser;
@@ -312,7 +307,6 @@ async function loadPosts() {
         });
       }
 
-      // Медиа
       let mediaHtml = '';
       if (post.mediaUrl) {
         const url = post.mediaUrl;
@@ -347,7 +341,7 @@ async function loadPosts() {
           </div>
           
           <div class="comments-section">
-            <div class="comments-list">
+            <div class="comments-list" data-post-id="${postId}">
               ${comments.map(c => `
                 <div class="comment" data-comment-id="${c.id}">
                   <span class="comment-author" data-uid="${c.authorUid || ''}" data-email="${escapeHtml(c.authorEmail)}">${escapeHtml(c.authorName)}</span>
@@ -357,14 +351,19 @@ async function loadPosts() {
                 </div>
               `).join('')}
             </div>
-            ${user ? `<form class="add-comment-form" data-post-id="${postId}"><input type="text" class="comment-input" placeholder="Ваш комментарий..." required><button type="submit">Отправить</button></form>` : '<p class="login-to-comment">Войдите, чтобы комментировать</p>'}
+            ${user ? `
+              <form class="add-comment-form" data-post-id="${postId}">
+                <input type="text" class="comment-input" placeholder="Ваш комментарий..." required>
+                <button type="submit">Отправить</button>
+              </form>
+            ` : '<p class="login-to-comment">Войдите, чтобы комментировать</p>'}
           </div>
         </div>
       `;
     }
     postsContainer.innerHTML = html;
     
-    // Применяем сворачивание к длинным постам
+    // Сворачивание длинных постов
     document.querySelectorAll('.post-content').forEach(el => {
       const fullText = el.dataset.fullContent;
       if (fullText.length > 500) {
@@ -391,119 +390,174 @@ async function loadPosts() {
   }
 }
 
+// -------------------- Обработчики событий (с мгновенным обновлением) --------------------
 function attachPostEventListeners() {
-  // Лайки
+  // Лайки (без перезагрузки)
   document.querySelectorAll('.like-btn').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      e.preventDefault();
-      const user = auth.currentUser;
-      if (!user) { alert('Войдите, чтобы ставить лайки'); return; }
-      // Проверка мута
-      if (await isUserMuted(user.uid)) { alert('Вы замучены и не можете ставить лайки'); return; }
-      
-      const postId = btn.dataset.postId;
-      const likesCountSpan = btn.querySelector('.likes-count');
-      const likeQuery = query(collection(db, "likes"), where("postId", "==", postId), where("userId", "==", user.uid));
-      const snapshot = await getDocs(likeQuery);
-      if (snapshot.empty) {
-        await addDoc(collection(db, "likes"), { postId, userId: user.uid, createdAt: serverTimestamp() });
-        btn.classList.add('liked');
-        likesCountSpan.textContent = parseInt(likesCountSpan.textContent) + 1;
-      } else {
-        await deleteDoc(doc(db, "likes", snapshot.docs[0].id));
-        btn.classList.remove('liked');
-        likesCountSpan.textContent = parseInt(likesCountSpan.textContent) - 1;
-      }
-    });
+    btn.removeEventListener('click', handleLikeClick);
+    btn.addEventListener('click', handleLikeClick);
   });
   
-  // Комментарии
+  // Комментарии (отправка без перезагрузки)
   document.querySelectorAll('.add-comment-form').forEach(form => {
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const user = auth.currentUser;
-      if (!user) { alert('Войдите, чтобы комментировать'); return; }
-      if (await isUserMuted(user.uid)) { alert('Вы замучены и не можете комментировать'); return; }
-      
-      const postId = form.dataset.postId;
-      const input = form.querySelector('.comment-input');
-      const text = input.value.trim();
-      if (!text) return;
-      try {
-        await addDoc(collection(db, "comments"), {
-          postId, text,
-          authorEmail: user.email,
-          userId: user.uid,
-          createdAt: serverTimestamp()
-        });
-        input.value = '';
-        loadPosts();
-      } catch (error) {
-        alert('Ошибка: ' + error.message);
-      }
-    });
+    form.removeEventListener('submit', handleCommentSubmit);
+    form.addEventListener('submit', handleCommentSubmit);
   });
 
-  // Удаление постов (админ)
+  // Удаление постов (админ) — перезагрузка остаётся, т.к. пост большой
   document.querySelectorAll('.delete-post-btn').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      e.preventDefault();
-      const user = auth.currentUser;
-      if (!user || user.email !== ADMIN_EMAIL) return;
-      const postId = btn.dataset.postId;
-      if (!confirm('Удалить эту запись навсегда?')) return;
-      try {
-        await deleteDoc(doc(db, "posts", postId));
-        const likesSnapshot = await getDocs(query(collection(db, "likes"), where("postId", "==", postId)));
-        likesSnapshot.forEach(async d => await deleteDoc(doc(db, "likes", d.id)));
-        const commentsSnapshot = await getDocs(query(collection(db, "comments"), where("postId", "==", postId)));
-        commentsSnapshot.forEach(async d => await deleteDoc(doc(db, "comments", d.id)));
-        loadPosts();
-      } catch (error) { alert('Ошибка удаления: ' + error.message); }
-    });
+    btn.removeEventListener('click', handlePostDelete);
+    btn.addEventListener('click', handlePostDelete);
   });
 
-  // Удаление комментариев
+  // Удаление комментариев (мгновенное)
   document.querySelectorAll('.comment-delete-btn').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      e.preventDefault();
-      const user = auth.currentUser;
-      if (!user) return;
-      const commentId = btn.dataset.commentId;
-      // Проверить, автор или админ
-      const commentDoc = await getDoc(doc(db, "comments", commentId));
-      if (!commentDoc.exists()) return;
-      const comment = commentDoc.data();
-      if (user.uid !== comment.userId && user.email !== ADMIN_EMAIL) return;
-      if (!confirm('Удалить комментарий?')) return;
-      await deleteDoc(doc(db, "comments", commentId));
-      loadPosts();
-    });
+    btn.removeEventListener('click', handleCommentDelete);
+    btn.addEventListener('click', handleCommentDelete);
   });
 }
 
-// -------------------- Модерация (баны, муты) --------------------
+// Обработчик лайка (мгновенное обновление)
+async function handleLikeClick(e) {
+  e.preventDefault();
+  const btn = e.currentTarget;
+  const user = auth.currentUser;
+  if (!user) { alert('Войдите, чтобы ставить лайки'); return; }
+  if (await isUserMuted(user.uid)) { alert('Вы замучены и не можете ставить лайки'); return; }
+  
+  const postId = btn.dataset.postId;
+  const likesCountSpan = btn.querySelector('.likes-count');
+  const likeQuery = query(collection(db, "likes"), where("postId", "==", postId), where("userId", "==", user.uid));
+  const snapshot = await getDocs(likeQuery);
+  
+  if (snapshot.empty) {
+    await addDoc(collection(db, "likes"), { postId, userId: user.uid, createdAt: serverTimestamp() });
+    btn.classList.add('liked');
+    likesCountSpan.textContent = parseInt(likesCountSpan.textContent) + 1;
+  } else {
+    await deleteDoc(doc(db, "likes", snapshot.docs[0].id));
+    btn.classList.remove('liked');
+    likesCountSpan.textContent = parseInt(likesCountSpan.textContent) - 1;
+  }
+}
+
+// Обработчик отправки комментария (добавление без перезагрузки)
+async function handleCommentSubmit(e) {
+  e.preventDefault();
+  const form = e.currentTarget;
+  const user = auth.currentUser;
+  if (!user) { alert('Войдите, чтобы комментировать'); return; }
+  if (await isUserMuted(user.uid)) { alert('Вы замучены и не можете комментировать'); return; }
+  
+  const postId = form.dataset.postId;
+  const input = form.querySelector('.comment-input');
+  const text = input.value.trim();
+  if (!text) return;
+  
+  try {
+    const docRef = await addDoc(collection(db, "comments"), {
+      postId, text,
+      authorEmail: user.email,
+      userId: user.uid,
+      createdAt: serverTimestamp()
+    });
+    
+    // Получаем данные профиля для отображения
+    const profile = await getUserProfile(user);
+    const authorName = profile?.username || user.email;
+    
+    // Создаём элемент комментария и добавляем в список
+    const commentsList = document.querySelector(`.comments-list[data-post-id="${postId}"]`);
+    const commentDiv = document.createElement('div');
+    commentDiv.className = 'comment';
+    commentDiv.dataset.commentId = docRef.id;
+    commentDiv.innerHTML = `
+      <span class="comment-author" data-uid="${user.uid}" data-email="${escapeHtml(user.email)}">${escapeHtml(authorName)}</span>
+      <span class="comment-text">${escapeHtml(text)}</span>
+      <span class="comment-time">${new Date().toLocaleString()}</span>
+      <button class="comment-delete-btn" data-comment-id="${docRef.id}">🗑️</button>
+    `;
+    commentsList.appendChild(commentDiv);
+    
+    // Навешиваем обработчик удаления на новую кнопку
+    const deleteBtn = commentDiv.querySelector('.comment-delete-btn');
+    deleteBtn.addEventListener('click', handleCommentDelete);
+    
+    // Очищаем поле ввода
+    input.value = '';
+    
+    // Добавляем обработчик модерации (клик по автору)
+    const authorSpan = commentDiv.querySelector('.comment-author');
+    authorSpan.addEventListener('click', moderationClickHandler);
+  } catch (error) {
+    alert('Ошибка: ' + error.message);
+  }
+}
+
+// Удаление комментария (мгновенное)
+async function handleCommentDelete(e) {
+  e.preventDefault();
+  const btn = e.currentTarget;
+  const user = auth.currentUser;
+  if (!user) return;
+  
+  const commentId = btn.dataset.commentId;
+  const commentDoc = await getDoc(doc(db, "comments", commentId));
+  if (!commentDoc.exists()) return;
+  const comment = commentDoc.data();
+  
+  // Проверка прав
+  if (user.uid !== comment.userId && user.email !== ADMIN_EMAIL) return;
+  if (!confirm('Удалить комментарий?')) return;
+  
+  await deleteDoc(doc(db, "comments", commentId));
+  
+  // Удаляем элемент из DOM
+  const commentDiv = btn.closest('.comment');
+  commentDiv.remove();
+}
+
+// Удаление поста (с перезагрузкой — оставляем как есть)
+async function handlePostDelete(e) {
+  e.preventDefault();
+  const btn = e.currentTarget;
+  const user = auth.currentUser;
+  if (!user || user.email !== ADMIN_EMAIL) return;
+  const postId = btn.dataset.postId;
+  if (!confirm('Удалить эту запись навсегда?')) return;
+  try {
+    await deleteDoc(doc(db, "posts", postId));
+    const likesSnapshot = await getDocs(query(collection(db, "likes"), where("postId", "==", postId)));
+    likesSnapshot.forEach(async d => await deleteDoc(doc(db, "likes", d.id)));
+    const commentsSnapshot = await getDocs(query(collection(db, "comments"), where("postId", "==", postId)));
+    commentsSnapshot.forEach(async d => await deleteDoc(doc(db, "comments", d.id)));
+    loadPosts();
+  } catch (error) { alert('Ошибка удаления: ' + error.message); }
+}
+
+// -------------------- Модерация (клик по автору) --------------------
+function moderationClickHandler(e) {
+  const el = e.currentTarget;
+  const uid = el.dataset.uid;
+  const email = el.dataset.email;
+  if (!uid && !email) return;
+  currentTargetUser = { uid, email, username: el.textContent };
+  const user = auth.currentUser;
+  if (user && user.email === ADMIN_EMAIL) {
+    modalUserInfo.textContent = `${currentTargetUser.username} (${currentTargetUser.email})`;
+    modal.style.display = 'flex';
+  }
+}
+
 function attachModerationListeners(isAdmin, currentUser) {
   if (!isAdmin && !currentUser) return;
-  
-  // Клик по автору поста или комментария
   document.querySelectorAll('.comment-author, .author-name').forEach(el => {
-    el.addEventListener('click', async (e) => {
-      const uid = el.dataset.uid;
-      const email = el.dataset.email;
-      if (!uid && !email) return;
-      
-      currentTargetUser = { uid, email, username: el.textContent };
-      
-      if (isAdmin) {
-        modalUserInfo.textContent = `${currentTargetUser.username} (${currentTargetUser.email})`;
-        modal.style.display = 'flex';
-      }
-    });
+    el.removeEventListener('click', moderationClickHandler);
+    el.addEventListener('click', moderationClickHandler);
   });
 }
 
-// Модальное окно
+// -------------------- Модальное окно --------------------
 closeModalBtn.onclick = () => modal.style.display = 'none';
 window.onclick = (e) => { if (e.target == modal) modal.style.display = 'none'; };
 
@@ -551,7 +605,7 @@ modalDeleteCommentsBtn.onclick = async () => {
   snapshot.forEach(async d => await deleteDoc(doc(db, "comments", d.id)));
   alert('Комментарии удалены');
   modal.style.display = 'none';
-  loadPosts();
+  loadPosts(); // только тут нужна перезагрузка
 };
 
 // Просмотр списков банов/мутов

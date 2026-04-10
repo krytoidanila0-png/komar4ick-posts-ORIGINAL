@@ -16,13 +16,11 @@ body {
   animation: crtFlicker 0.15s infinite alternate;
 }
 
-/* Эффект мерцания как у ЭЛТ-монитора */
 @keyframes crtFlicker {
   0% { opacity: 0.98; }
   100% { opacity: 1; }
 }
 
-/* Анимация матрицы (чуть ярче и плотнее) */
 .matrix-bg {
   position: fixed;
   top: 0;
@@ -49,7 +47,6 @@ body {
   100% { transform: translateY(100vh); }
 }
 
-/* Шапка с ASCII и глитчем */
 header {
   display: flex;
   justify-content: space-between;
@@ -73,7 +70,6 @@ h1 {
   text-shadow: 3px 0 0 #f0f, -3px 0 0 #0ff;
 }
 
-/* ASCII-арт перед заголовком (псевдоэлемент) */
 h1::before {
   content: "[>_]";
   font-size: 1.6rem;
@@ -89,7 +85,6 @@ h1::before {
   100% { opacity: 0.7; }
 }
 
-/* Глитч-эффект для заголовка */
 @keyframes glitch {
   0% { transform: skew(0deg); }
   20% { transform: skew(2deg); text-shadow: 2px 0 red, -2px 0 blue; }
@@ -108,14 +103,13 @@ h2 {
   letter-spacing: 2px;
 }
 
-/* Элементы ввода в стиле терминала */
 input, textarea, button {
   background: #0a0f0a;
   border: 1px solid #0f0;
   color: #0f0;
   font-family: 'Courier New', Courier, monospace;
   padding: 8px 12px;
-  border-radius: 0; /* Убираем скругления */
+  border-radius: 0;
   outline: none;
   box-shadow: inset 0 0 5px rgba(0, 255, 0, 0.2);
   transition: 0.1s;
@@ -146,7 +140,6 @@ button:hover {
   border-color: #0f0;
 }
 
-/* Область авторизации */
 #auth-area {
   display: flex;
   gap: 10px;
@@ -155,7 +148,6 @@ button:hover {
   font-size: 0.9rem;
 }
 
-/* Карточки постов — грубее, с эффектом старой бумаги */
 .post-card {
   border: 1px solid #0f0;
   padding: 18px;
@@ -193,9 +185,33 @@ button:hover {
   white-space: pre-wrap;
   word-break: break-word;
   line-height: 1.6;
+  overflow: hidden;
+  transition: max-height 0.4s ease;
 }
 
-/* Кнопка удаления */
+.post-content.collapsed {
+  max-height: 150px;
+}
+
+.read-more-btn {
+  background: transparent;
+  border: none;
+  color: #0f0;
+  text-decoration: underline;
+  cursor: pointer;
+  margin-top: 5px;
+  padding: 0;
+  font-size: 0.9rem;
+  text-transform: none;
+  box-shadow: none;
+}
+
+.read-more-btn:hover {
+  background: transparent;
+  color: #0f0;
+  text-shadow: 0 0 5px #0f0;
+}
+
 .delete-post-btn {
   background: transparent;
   border: 1px solid #f00;
@@ -214,7 +230,6 @@ button:hover {
   box-shadow: 0 0 10px #f00;
 }
 
-/* Лайки */
 .post-actions {
   margin-top: 18px;
   display: flex;
@@ -244,7 +259,6 @@ button:hover {
   box-shadow: 0 0 8px #0f0, inset 0 0 5px #000;
 }
 
-/* Комментарии */
 .comments-section {
   margin-top: 20px;
   border-top: 1px dashed #0f0;
@@ -259,6 +273,9 @@ button:hover {
   padding: 8px 0;
   border-bottom: 1px dotted #2a4;
   font-size: 0.9rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
 }
 
 .comment-author {
@@ -266,15 +283,31 @@ button:hover {
   color: #0f0;
   margin-right: 12px;
   text-shadow: 0 0 3px #0f0;
+  cursor: pointer;
+}
+
+.comment-author:hover {
+  text-decoration: underline;
 }
 
 .comment-text {
   margin-right: 15px;
+  flex: 1;
 }
 
 .comment-time {
   color: #6a6;
   font-size: 0.7rem;
+}
+
+.comment-delete-btn {
+  background: transparent;
+  border: none;
+  color: #f00;
+  margin-left: 10px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 0 4px;
 }
 
 .add-comment-form {
@@ -294,7 +327,6 @@ button:hover {
   margin-top: 10px;
 }
 
-/* Форма добавления поста */
 #add-post-section {
   margin-bottom: 35px;
   padding: 25px;
@@ -310,17 +342,6 @@ button:hover {
   gap: 18px;
 }
 
-#add-post-form input,
-#add-post-form textarea {
-  width: 100%;
-  background: #0a0f0a;
-}
-
-/* Поле для ссылки на медиа */
-.media-url-area {
-  margin-top: 5px;
-}
-
 .media-url-area label {
   display: block;
   margin-bottom: 8px;
@@ -330,31 +351,14 @@ button:hover {
   letter-spacing: 1px;
 }
 
-#media-url {
-  width: 100%;
-}
-
-.media-preview {
-  margin-top: 15px;
-  max-width: 100%;
-}
-
 .media-preview img,
 .media-preview video {
   max-width: 100%;
   max-height: 200px;
   border: 1px solid #0f0;
-  border-radius: 0;
   box-shadow: 0 0 10px #0f0;
 }
 
-.media-preview iframe {
-  max-width: 100%;
-  border: 1px solid #0f0;
-  box-shadow: 0 0 10px #0f0;
-}
-
-/* Медиа в постах */
 .post-media {
   margin-top: 20px;
   max-width: 100%;
@@ -380,24 +384,70 @@ button:hover {
   border: none;
 }
 
-/* Эффект печатной машинки для постов (при загрузке) */
-@keyframes typewriter {
-  from { width: 0; }
-  to { width: 100%; }
+/* Админ-панель */
+#admin-panel {
+  margin-bottom: 25px;
+  padding: 15px;
+  border: 1px solid #ff0;
+  background: rgba(20, 20, 0, 0.5);
 }
 
-/* Адаптив */
+.admin-controls {
+  display: flex;
+  gap: 15px;
+  margin-bottom: 15px;
+}
+
+#admin-lists {
+  max-height: 300px;
+  overflow-y: auto;
+  font-size: 0.8rem;
+}
+
+/* Модальное окно */
+.modal {
+  position: fixed;
+  z-index: 1000;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0,0,0,0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-content {
+  background: #0a0f0a;
+  border: 2px solid #0f0;
+  padding: 20px;
+  width: 400px;
+  max-width: 90%;
+  box-shadow: 0 0 30px #0f0;
+}
+
+.close-modal {
+  color: #0f0;
+  float: right;
+  font-size: 28px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.modal-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 20px 0;
+}
+
 @media (max-width: 600px) {
   header {
     flex-direction: column;
     align-items: start;
   }
-  
   h1 {
     font-size: 1.8rem;
-  }
-  
-  h1::before {
-    font-size: 1.2rem;
   }
 }

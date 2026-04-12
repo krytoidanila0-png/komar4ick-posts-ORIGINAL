@@ -14,6 +14,12 @@
     <div id="auth-area"></div>
   </header>
 
+  <!-- Блок технических оповещений (виден всем) -->
+  <section id="announcements-section">
+    <h2>&gt; Технические оповещения</h2>
+    <div id="announcements-container">Загрузка...</div>
+  </section>
+
   <main>
     <section id="admin-panel" style="display: none;">
       <h2>&gt; Админ-панель</h2>
@@ -22,6 +28,15 @@
         <button id="show-mutes-btn">🔇 Список мутов</button>
       </div>
       <div id="admin-lists"></div>
+
+      <!-- Форма добавления оповещения (только для админа) -->
+      <div id="admin-announcement-form" style="display: none; margin-top: 20px;">
+        <h3>➕ Новое оповещение</h3>
+        <input type="text" id="announcement-title" placeholder="Заголовок" style="width: 100%; margin-bottom: 10px;">
+        <textarea id="announcement-content" placeholder="Текст оповещения..." rows="2" style="width: 100%;"></textarea>
+        <button id="create-announcement-btn">Опубликовать оповещение</button>
+        <hr>
+      </div>
     </section>
 
     <section id="add-post-section" style="display: none;">

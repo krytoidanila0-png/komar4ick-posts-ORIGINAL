@@ -32,6 +32,7 @@ function isAdmin(user) {
   return user && ADMIN_EMAILS.includes(user.email);
 }
 
+// DOM элементы
 const authArea = document.getElementById('auth-area');
 const addPostSection = document.getElementById('add-post-section');
 const postsContainer = document.getElementById('posts-container');
@@ -50,8 +51,16 @@ const muteDurationInput = document.getElementById('mute-duration');
 const applyMuteBtn = document.getElementById('apply-mute-btn');
 const closeModalBtn = document.querySelector('.close-modal');
 
+// Новые элементы для оповещений
+const announcementsContainer = document.getElementById('announcements-container');
+const adminAnnouncementForm = document.getElementById('admin-announcement-form');
+const announcementTitle = document.getElementById('announcement-title');
+const announcementContent = document.getElementById('announcement-content');
+const createAnnouncementBtn = document.getElementById('create-announcement-btn');
+
 let currentTargetUser = null;
 
+// ==================== МАТРИЦА ====================
 function createMatrixRain() {
   const bg = document.getElementById('matrix');
   const spanCount = 40;
@@ -72,7 +81,7 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-// Получить IP
+// ==================== IP ====================
 async function getUserIP() {
   try {
     const res = await fetch('https://api.ipify.org?format=json');
@@ -83,7 +92,7 @@ async function getUserIP() {
   }
 }
 
-// Получить профиль пользователя (создать, если отсутствует)
+// ==================== ПРОФИЛИ ПОЛЬЗОВАТЕЛЕЙ ====================
 async function getUserProfile(user) {
   if (!user) return null;
   const userRef = doc(db, "users", user.uid);
@@ -111,6 +120,7 @@ async function getUserProfileById(uid) {
   return snap.exists() ? snap.data() : null;
 }
 
+// ==================== БАН И МУТ ====================
 async function isUserBanned(uid, email, ip) {
   const bansSnapshot = await getDocs(collection(db, "bans"));
   for (const doc of bansSnapshot.docs) {
@@ -130,6 +140,7 @@ async function isUserMuted(uid) {
   return mute.expiresAt.toMillis() > Date.now();
 }
 
+// ==================== ПРЕДПРОСМОТР МЕДИА ====================
 function renderMediaPreviewFromUrl(url) {
   if (!url) { mediaPreview.innerHTML = ''; return; }
   const youtubeRegex = /(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\n?#]+)/;
@@ -151,7 +162,7 @@ function renderMediaPreviewFromUrl(url) {
 }
 mediaUrlInput.addEventListener('input', (e) => renderMediaPreviewFromUrl(e.target.value.trim()));
 
-// Отрисовка UI в зависимости от статуса авторизации
+// ==================== UI АВТОРИЗАЦИИ ====================
 async function renderAuthUI(user) {
   if (user) {
     const ip = await getUserIP();
@@ -175,6 +186,7 @@ async function renderAuthUI(user) {
     const admin = isAdmin(user);
     addPostSection.style.display = admin ? 'block' : 'none';
     adminPanel.style.display = admin ? 'block' : 'none';
+    if (adminAnnouncementForm) adminAnnouncementForm.style.display = admin ? 'block' : 'none';
   } else {
     authArea.innerHTML = `
       <div id="auth-forms">
@@ -188,6 +200,7 @@ async function renderAuthUI(user) {
     `;
     addPostSection.style.display = 'none';
     adminPanel.style.display = 'none';
+    if (adminAnnouncementForm) adminAnnouncementForm.style.display = 'none';
     attachGuestEventListeners();
   }
 }
@@ -200,7 +213,6 @@ function attachGuestEventListeners() {
   const passInput = document.getElementById('login-password');
   const usernameInput = document.getElementById('signup-username');
 
-  // Логин
   loginBtn.addEventListener('click', async () => {
     try {
       const userCredential = await signInWithEmailAndPassword(auth, emailInput.value, passInput.value);
@@ -210,9 +222,7 @@ function attachGuestEventListeners() {
         alert(`Ваш аккаунт заблокирован. Причина: ${ban.reason || 'не указана'}`);
         await signOut(auth);
       } else {
-        // Убедимся, что профиль существует
         await getUserProfile(userCredential.user);
-        // Очищаем поля
         emailInput.value = '';
         passInput.value = '';
       }
@@ -221,10 +231,8 @@ function attachGuestEventListeners() {
     }
   });
 
-  // Регистрация (исправленная логика)
   signupBtn.addEventListener('click', async () => {
     if (signupBtn.textContent === 'Регистрация') {
-      // Показываем поле для никнейма
       usernameInput.style.display = 'inline-block';
       signupBtn.textContent = 'Подтвердить';
     } else {
@@ -234,17 +242,14 @@ function attachGuestEventListeners() {
       const password = passInput.value;
       if (!email || !password) { alert('Введите email и пароль'); return; }
 
-      // Блокируем кнопку на время операции
       signupBtn.disabled = true;
       signupBtn.textContent = '⏳ Создание...';
 
       try {
-        // Создаём пользователя
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
         const user = userCredential.user;
         const ip = await getUserIP();
 
-        // Создаём документ в Firestore
         await setDoc(doc(db, "users", user.uid), {
           uid: user.uid,
           email: user.email,
@@ -253,23 +258,18 @@ function attachGuestEventListeners() {
           ip: ip
         });
 
-        // Сбрасываем форму регистрации
         usernameInput.style.display = 'none';
         usernameInput.value = '';
         emailInput.value = '';
         passInput.value = '';
         signupBtn.textContent = 'Регистрация';
-        
-        // Небольшая задержка для обновления UI
         setTimeout(() => {
-          // onAuthStateChanged сам обновит интерфейс, но можно и явно
           renderAuthUI(user);
           loadPosts();
         }, 100);
       } catch (error) {
         console.error('Registration error:', error);
         alert('Ошибка регистрации: ' + error.message);
-        // Возвращаем кнопку в исходное состояние
         usernameInput.style.display = 'none';
         signupBtn.textContent = 'Регистрация';
       } finally {
@@ -278,7 +278,6 @@ function attachGuestEventListeners() {
     }
   });
 
-  // Google Login
   googleBtn.addEventListener('click', async () => {
     const provider = new GoogleAuthProvider();
     try {
@@ -297,7 +296,73 @@ function attachGuestEventListeners() {
   });
 }
 
-// Загрузка постов
+// ==================== ОПОВЕЩЕНИЯ ====================
+async function loadAnnouncements() {
+  if (!announcementsContainer) return;
+  announcementsContainer.innerHTML = 'Загрузка...';
+  try {
+    const q = query(collection(db, "announcements"), orderBy("createdAt", "desc"));
+    const snapshot = await getDocs(q);
+    if (snapshot.empty) {
+      announcementsContainer.innerHTML = '<p>Нет оповещений.</p>';
+      return;
+    }
+    let html = '<div class="announcements-list">';
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      const date = data.createdAt ? new Date(data.createdAt.toDate()).toLocaleString() : '';
+      html += `
+        <div class="announcement-item" data-id="${doc.id}">
+          <div class="announcement-header">
+            <strong>📢 ${escapeHtml(data.title)}</strong>
+            <span class="announcement-date">${date}</span>
+            ${isAdmin(auth.currentUser) ? `<button class="delete-announcement-btn" data-id="${doc.id}">🗑️</button>` : ''}
+          </div>
+          <div class="announcement-content">${escapeHtml(data.content)}</div>
+        </div>
+      `;
+    });
+    html += '</div>';
+    announcementsContainer.innerHTML = html;
+    
+    if (isAdmin(auth.currentUser)) {
+      document.querySelectorAll('.delete-announcement-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const id = btn.dataset.id;
+          if (confirm('Удалить оповещение?')) {
+            await deleteDoc(doc(db, "announcements", id));
+            loadAnnouncements();
+          }
+        });
+      });
+    }
+  } catch (error) {
+    console.error(error);
+    announcementsContainer.innerHTML = '<p>Ошибка загрузки оповещений.</p>';
+  }
+}
+
+async function createAnnouncement(title, content) {
+  if (!title || !content) return alert('Заполните заголовок и текст');
+  const user = auth.currentUser;
+  if (!isAdmin(user)) return alert('Нет прав');
+  try {
+    await addDoc(collection(db, "announcements"), {
+      title: title,
+      content: content,
+      createdAt: serverTimestamp(),
+      createdBy: user.email
+    });
+    announcementTitle.value = '';
+    announcementContent.value = '';
+    loadAnnouncements();
+    alert('Оповещение опубликовано');
+  } catch (error) {
+    alert('Ошибка: ' + error.message);
+  }
+}
+
+// ==================== ПОСТЫ ====================
 async function loadPosts() {
   postsContainer.innerHTML = 'Загрузка...';
   const user = auth.currentUser;
@@ -535,6 +600,7 @@ function attachPostEventListeners(admin, user) {
   });
 }
 
+// ==================== МОДЕРАЦИЯ ====================
 async function showModModal(uid, email, username) {
   currentTargetUser = { uid, email, username };
   const profile = await getUserProfileById(uid);
@@ -647,6 +713,7 @@ document.getElementById('show-mutes-btn')?.addEventListener('click', async () =>
   });
 });
 
+// ==================== СОЗДАНИЕ ПОСТА ====================
 addPostForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const user = auth.currentUser;
@@ -668,7 +735,16 @@ addPostForm.addEventListener('submit', async (e) => {
   } catch (error) { alert('Ошибка: ' + error.message); }
 });
 
+// ==================== КНОПКА СОЗДАНИЯ ОПОВЕЩЕНИЯ ====================
+if (createAnnouncementBtn) {
+  createAnnouncementBtn.addEventListener('click', () => {
+    createAnnouncement(announcementTitle.value.trim(), announcementContent.value.trim());
+  });
+}
+
+// ==================== СЛУШАТЕЛЬ АВТОРИЗАЦИИ ====================
 onAuthStateChanged(auth, (user) => {
   renderAuthUI(user);
   loadPosts();
+  loadAnnouncements();
 });

@@ -20,7 +20,8 @@ import {
   where,
   deleteDoc,
   setDoc,
-  getDoc
+  getDoc,
+  writeBatch
 } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-firestore.js";
 
 const auth = window.auth;
@@ -45,13 +46,17 @@ const modal = document.getElementById('mod-modal');
 const modalUserInfo = document.getElementById('modal-user-info');
 const modalBanBtn = document.getElementById('modal-ban-btn');
 const modalMuteBtn = document.getElementById('modal-mute-btn');
+const modalDeleteAccountBtn = document.getElementById('modal-delete-account-btn');
 const modalDeleteCommentsBtn = document.getElementById('modal-delete-comments-btn');
+const modalBanReasonDiv = document.getElementById('modal-ban-reason');
 const modalMuteDurationDiv = document.getElementById('modal-mute-duration');
 const muteDurationInput = document.getElementById('mute-duration');
 const applyMuteBtn = document.getElementById('apply-mute-btn');
+const applyBanBtn = document.getElementById('apply-ban-btn');
+const banReasonInput = document.getElementById('ban-reason');
 const closeModalBtn = document.querySelector('.close-modal');
 
-// Элементы для оповещений (модалка)
+// Элементы для оповещений
 const notifBtn = document.getElementById('notifications-btn');
 const notifModal = document.getElementById('notifications-modal');
 const closeNotifModal = document.querySelector('.close-notifications-modal');
@@ -61,7 +66,13 @@ const notifTitle = document.getElementById('notif-title');
 const notifContent = document.getElementById('notif-content');
 const createNotifBtn = document.getElementById('create-notif-btn');
 
+// Элементы поиска
+const searchEmailInput = document.getElementById('search-email');
+const searchUserBtn = document.getElementById('search-user-btn');
+const searchResultsDiv = document.getElementById('search-results');
+
 let currentTargetUser = null;
+let currentSearchResults = [];
 
 // ==================== МАТРИЦА ====================
 function createMatrixRain() {
@@ -84,7 +95,6 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-// ==================== IP ====================
 async function getUserIP() {
   try {
     const res = await fetch('https://api.ipify.org?format=json');
@@ -95,7 +105,6 @@ async function getUserIP() {
   }
 }
 
-// ==================== ПРОФИЛИ ПОЛЬЗОВАТЕЛЕЙ ====================
 async function getUserProfile(user) {
   if (!user) return null;
   const userRef = doc(db, "users", user.uid);
@@ -123,12 +132,29 @@ async function getUserProfileById(uid) {
   return snap.exists() ? snap.data() : null;
 }
 
+async function getUserProfileByEmail(email) {
+  const usersRef = collection(db, "users");
+  const q = query(usersRef, where("email", "==", email));
+  const snapshot = await getDocs(q);
+  if (snapshot.empty) return null;
+  return { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
+}
+
 // ==================== БАН И МУТ ====================
 async function isUserBanned(uid, email, ip) {
   const bansSnapshot = await getDocs(collection(db, "bans"));
   for (const doc of bansSnapshot.docs) {
     const ban = doc.data();
     if (ban.uid === uid || ban.email === email || (ip && ban.ip === ip)) {
+      // Проверка на автоудаление через 30 дней
+      if (ban.bannedAt && ban.bannedAt.toDate) {
+        const daysSinceBan = (Date.now() - ban.bannedAt.toDate().getTime()) / (1000*3600*24);
+        if (daysSinceBan >= 30) {
+          // Автоматически удаляем аккаунт
+          await deleteUserAccountByUid(uid, email);
+          return null; // бан снят, аккаунт удалён
+        }
+      }
       return ban;
     }
   }
@@ -141,6 +167,44 @@ async function isUserMuted(uid) {
   if (mutesSnapshot.empty) return false;
   const mute = mutesSnapshot.docs[0].data();
   return mute.expiresAt.toMillis() > Date.now();
+}
+
+// Полное удаление пользователя из Firestore
+async function deleteUserAccountByUid(uid, email) {
+  if (!uid) return;
+  // 1. Удаляем комментарии
+  const commentsSnapshot = await getDocs(query(collection(db, "comments"), where("userId", "==", uid)));
+  const batch = writeBatch(db);
+  commentsSnapshot.forEach(doc => batch.delete(doc.ref));
+  await batch.commit();
+  
+  // 2. Удаляем лайки
+  const likesSnapshot = await getDocs(query(collection(db, "likes"), where("userId", "==", uid)));
+  const batch2 = writeBatch(db);
+  likesSnapshot.forEach(doc => batch2.delete(doc.ref));
+  await batch2.commit();
+  
+  // 3. Удаляем посты пользователя (если он не админ)
+  const postsSnapshot = await getDocs(query(collection(db, "posts"), where("authorId", "==", uid)));
+  const batch3 = writeBatch(db);
+  postsSnapshot.forEach(doc => batch3.delete(doc.ref));
+  await batch3.commit();
+  
+  // 4. Удаляем документ пользователя
+  await deleteDoc(doc(db, "users", uid));
+  
+  // 5. Удаляем записи банов и мутов этого пользователя
+  const bansSnapshot = await getDocs(query(collection(db, "bans"), where("uid", "==", uid)));
+  const batch4 = writeBatch(db);
+  bansSnapshot.forEach(doc => batch4.delete(doc.ref));
+  await batch4.commit();
+  
+  const mutesSnapshot = await getDocs(query(collection(db, "mutes"), where("uid", "==", uid)));
+  const batch5 = writeBatch(db);
+  mutesSnapshot.forEach(doc => batch5.delete(doc.ref));
+  await batch5.commit();
+  
+  console.log(`Account ${email} (${uid}) fully deleted from Firestore.`);
 }
 
 // ==================== ПРЕДПРОСМОТР МЕДИА ====================
@@ -171,7 +235,7 @@ async function renderAuthUI(user) {
     const ip = await getUserIP();
     const ban = await isUserBanned(user.uid, user.email, ip);
     if (ban) {
-      alert(`Ваш аккаунт заблокирован. Причина: ${ban.reason || 'не указана'}`);
+      alert(`Ваш аккаунт заблокирован. Причина: ${ban.reason || 'не указана'}. Если прошло 30 дней, аккаунт будет удалён.`);
       await signOut(auth);
       return;
     }
@@ -189,6 +253,7 @@ async function renderAuthUI(user) {
     const admin = isAdmin(user);
     addPostSection.style.display = admin ? 'block' : 'none';
     adminPanel.style.display = admin ? 'block' : 'none';
+    if (notifAdminForm) notifAdminForm.style.display = admin ? 'block' : 'none';
   } else {
     authArea.innerHTML = `
       <div id="auth-forms">
@@ -202,6 +267,7 @@ async function renderAuthUI(user) {
     `;
     addPostSection.style.display = 'none';
     adminPanel.style.display = 'none';
+    if (notifAdminForm) notifAdminForm.style.display = 'none';
     attachGuestEventListeners();
   }
 }
@@ -297,7 +363,7 @@ function attachGuestEventListeners() {
   });
 }
 
-// ==================== ОПОВЕЩЕНИЯ В МОДАЛКЕ ====================
+// ==================== ОПОВЕЩЕНИЯ ====================
 async function loadNotificationsToModal() {
   notificationsList.innerHTML = 'Загрузка...';
   try {
@@ -362,7 +428,6 @@ async function createNotification(title, content) {
   }
 }
 
-// Открыть модалку оповещений
 notifBtn.addEventListener('click', async () => {
   notifModal.style.display = 'flex';
   await loadNotificationsToModal();
@@ -373,26 +438,121 @@ notifBtn.addEventListener('click', async () => {
     notifAdminForm.style.display = 'none';
   }
 });
+if (closeNotifModal) closeNotifModal.addEventListener('click', () => notifModal.style.display = 'none');
+if (createNotifBtn) createNotifBtn.addEventListener('click', () => createNotification(notifTitle.value.trim(), notifContent.value.trim()));
 
-// Закрыть модалку оповещений
-if (closeNotifModal) {
-  closeNotifModal.addEventListener('click', () => {
-    notifModal.style.display = 'none';
-  });
+// ==================== ПОИСК ПОЛЬЗОВАТЕЛЯ ПО EMAIL ====================
+async function searchUserByEmail(email) {
+  if (!email) return [];
+  const usersRef = collection(db, "users");
+  const q = query(usersRef, where("email", "==", email));
+  const snapshot = await getDocs(q);
+  if (snapshot.empty) return [];
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 }
-// Закрытие по клику вне области
-window.addEventListener('click', (e) => {
-  if (e.target === notifModal) notifModal.style.display = 'none';
+
+searchUserBtn.addEventListener('click', async () => {
+  const email = searchEmailInput.value.trim();
+  if (!email) { alert('Введите email'); return; }
+  const users = await searchUserByEmail(email);
+  searchResultsDiv.innerHTML = '';
+  if (users.length === 0) {
+    searchResultsDiv.innerHTML = '<p>Пользователь не найден.</p>';
+    return;
+  }
+  users.forEach(user => {
+    const div = document.createElement('div');
+    div.style.padding = '8px';
+    div.style.borderBottom = '1px solid #0f0';
+    div.innerHTML = `
+      <strong>${escapeHtml(user.username || user.email)}</strong> (${escapeHtml(user.email)})
+      <button class="manage-user-btn" data-uid="${user.uid}" data-email="${user.email}" data-username="${escapeHtml(user.username || user.email)}">Управление</button>
+    `;
+    searchResultsDiv.appendChild(div);
+  });
+  document.querySelectorAll('.manage-user-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      showModModal(btn.dataset.uid, btn.dataset.email, btn.dataset.username);
+    });
+  });
 });
 
-// Создать оповещение
-if (createNotifBtn) {
-  createNotifBtn.addEventListener('click', () => {
-    createNotification(notifTitle.value.trim(), notifContent.value.trim());
-  });
+// ==================== МОДАЛЬНОЕ УПРАВЛЕНИЕ ПОЛЬЗОВАТЕЛЕМ ====================
+async function showModModal(uid, email, username) {
+  currentTargetUser = { uid, email, username };
+  const profile = await getUserProfileById(uid);
+  const ip = profile?.ip || 'неизвестен';
+  currentTargetUser.ip = ip;
+  modalUserInfo.innerHTML = `${escapeHtml(username)} (${escapeHtml(email)})<br>IP: ${ip}`;
+  modalBanReasonDiv.style.display = 'none';
+  modalMuteDurationDiv.style.display = 'none';
+  modal.style.display = 'flex';
 }
 
-// ==================== ПОСТЫ ====================
+modalBanBtn.onclick = () => {
+  modalBanReasonDiv.style.display = 'block';
+  banReasonInput.value = '';
+};
+applyBanBtn.onclick = async () => {
+  if (!currentTargetUser) return;
+  const reason = banReasonInput.value.trim();
+  if (!reason) { alert('Укажите причину бана'); return; }
+  const banData = {
+    uid: currentTargetUser.uid,
+    email: currentTargetUser.email,
+    ip: currentTargetUser.ip,
+    reason: reason,
+    bannedAt: serverTimestamp(),
+    bannedBy: auth.currentUser.email
+  };
+  await addDoc(collection(db, "bans"), banData);
+  alert(`Пользователь ${currentTargetUser.email} забанен. Причина: ${reason}`);
+  modal.style.display = 'none';
+  modalBanReasonDiv.style.display = 'none';
+};
+
+modalMuteBtn.onclick = () => {
+  modalMuteDurationDiv.style.display = 'block';
+};
+applyMuteBtn.onclick = async () => {
+  if (!currentTargetUser || !currentTargetUser.uid) return;
+  const minutes = parseInt(muteDurationInput.value);
+  const expiresAt = new Date(Date.now() + minutes * 60000);
+  await addDoc(collection(db, "mutes"), {
+    uid: currentTargetUser.uid,
+    email: currentTargetUser.email,
+    expiresAt: expiresAt,
+    mutedBy: auth.currentUser.email,
+    createdAt: serverTimestamp()
+  });
+  alert(`Пользователь замучен на ${minutes} минут`);
+  modal.style.display = 'none';
+  modalMuteDurationDiv.style.display = 'none';
+};
+
+modalDeleteAccountBtn.onclick = async () => {
+  if (!currentTargetUser || !currentTargetUser.uid) return;
+  if (!confirm(`Удалить ВСЕ данные пользователя ${currentTargetUser.username} (${currentTargetUser.email}) из Firestore? Это действие необратимо.`)) return;
+  await deleteUserAccountByUid(currentTargetUser.uid, currentTargetUser.email);
+  alert(`Аккаунт ${currentTargetUser.email} полностью очищен. Если нужно удалить из аутентификации, сделайте это вручную в Firebase Console.`);
+  modal.style.display = 'none';
+  loadPosts();
+};
+
+modalDeleteCommentsBtn.onclick = async () => {
+  if (!currentTargetUser || !currentTargetUser.uid) return;
+  if (!confirm(`Удалить ВСЕ комментарии пользователя ${currentTargetUser.username}?`)) return;
+  const snapshot = await getDocs(query(collection(db, "comments"), where("userId", "==", currentTargetUser.uid)));
+  snapshot.forEach(async d => await deleteDoc(doc(db, "comments", d.id)));
+  alert('Комментарии удалены');
+  modal.style.display = 'none';
+  loadPosts();
+};
+
+closeModalBtn.onclick = () => modal.style.display = 'none';
+window.onclick = (e) => { if (e.target == modal) modal.style.display = 'none'; };
+
+// ==================== ПОСТЫ, КОММЕНТАРИИ, ЛАЙКИ (без изменений) ====================
 async function loadPosts() {
   postsContainer.innerHTML = 'Загрузка...';
   const user = auth.currentUser;
@@ -630,16 +790,6 @@ function attachPostEventListeners(admin, user) {
   });
 }
 
-// ==================== МОДЕРАЦИЯ ====================
-async function showModModal(uid, email, username) {
-  currentTargetUser = { uid, email, username };
-  const profile = await getUserProfileById(uid);
-  const ip = profile?.ip || 'неизвестен';
-  currentTargetUser.ip = ip;
-  modalUserInfo.innerHTML = `${escapeHtml(username)} (${escapeHtml(email)})<br>IP: ${ip}`;
-  modal.style.display = 'flex';
-}
-
 function attachModerationListeners(admin, currentUser) {
   if (!admin && !currentUser) return;
   
@@ -656,56 +806,7 @@ function attachModerationListeners(admin, currentUser) {
   });
 }
 
-closeModalBtn.onclick = () => modal.style.display = 'none';
-window.onclick = (e) => { if (e.target == modal) modal.style.display = 'none'; };
-
-modalBanBtn.onclick = async () => {
-  if (!currentTargetUser) return;
-  const reason = prompt('Причина бана (опционально):');
-  
-  const banData = {
-    uid: currentTargetUser.uid || null,
-    email: currentTargetUser.email || null,
-    ip: currentTargetUser.ip || null,
-    reason: reason || '',
-    bannedAt: serverTimestamp(),
-    bannedBy: auth.currentUser.email
-  };
-  await addDoc(collection(db, "bans"), banData);
-  alert('Пользователь забанен');
-  modal.style.display = 'none';
-};
-
-modalMuteBtn.onclick = () => {
-  modalMuteDurationDiv.style.display = 'block';
-};
-
-applyMuteBtn.onclick = async () => {
-  if (!currentTargetUser || !currentTargetUser.uid) return;
-  const minutes = parseInt(muteDurationInput.value);
-  const expiresAt = new Date(Date.now() + minutes * 60000);
-  await addDoc(collection(db, "mutes"), {
-    uid: currentTargetUser.uid,
-    email: currentTargetUser.email,
-    expiresAt: expiresAt,
-    mutedBy: auth.currentUser.email,
-    createdAt: serverTimestamp()
-  });
-  alert(`Пользователь замучен на ${minutes} минут`);
-  modal.style.display = 'none';
-  modalMuteDurationDiv.style.display = 'none';
-};
-
-modalDeleteCommentsBtn.onclick = async () => {
-  if (!currentTargetUser || !currentTargetUser.uid) return;
-  if (!confirm(`Удалить ВСЕ комментарии пользователя ${currentTargetUser.username}?`)) return;
-  const snapshot = await getDocs(query(collection(db, "comments"), where("userId", "==", currentTargetUser.uid)));
-  snapshot.forEach(async d => await deleteDoc(doc(db, "comments", d.id)));
-  alert('Комментарии удалены');
-  modal.style.display = 'none';
-  loadPosts();
-};
-
+// ==================== АДМИН-СПИСКИ БАНОВ И МУТОВ ====================
 document.getElementById('show-bans-btn')?.addEventListener('click', async () => {
   const snapshot = await getDocs(collection(db, "bans"));
   let html = '<h3>Забаненные</h3><ul>';

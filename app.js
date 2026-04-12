@@ -5,8 +5,7 @@ import {
   signOut, 
   onAuthStateChanged,
   GoogleAuthProvider,
-  signInWithPopup,
-  updateProfile
+  signInWithPopup
 } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-auth.js";
 
 import { 
@@ -73,6 +72,18 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+// Получить IP
+async function getUserIP() {
+  try {
+    const res = await fetch('https://api.ipify.org?format=json');
+    const data = await res.json();
+    return data.ip;
+  } catch (e) {
+    return 'unknown';
+  }
+}
+
+// Получить профиль пользователя (создать, если отсутствует)
 async function getUserProfile(user) {
   if (!user) return null;
   const userRef = doc(db, "users", user.uid);
@@ -98,16 +109,6 @@ async function getUserProfileById(uid) {
   const docRef = doc(db, "users", uid);
   const snap = await getDoc(docRef);
   return snap.exists() ? snap.data() : null;
-}
-
-async function getUserIP() {
-  try {
-    const res = await fetch('https://api.ipify.org?format=json');
-    const data = await res.json();
-    return data.ip;
-  } catch (e) {
-    return 'unknown';
-  }
 }
 
 async function isUserBanned(uid, email, ip) {
@@ -150,6 +151,7 @@ function renderMediaPreviewFromUrl(url) {
 }
 mediaUrlInput.addEventListener('input', (e) => renderMediaPreviewFromUrl(e.target.value.trim()));
 
+// Отрисовка UI в зависимости от статуса авторизации
 async function renderAuthUI(user) {
   if (user) {
     const ip = await getUserIP();
@@ -198,6 +200,7 @@ function attachGuestEventListeners() {
   const passInput = document.getElementById('login-password');
   const usernameInput = document.getElementById('signup-username');
 
+  // Логин
   loginBtn.addEventListener('click', async () => {
     try {
       const userCredential = await signInWithEmailAndPassword(auth, emailInput.value, passInput.value);
@@ -206,36 +209,76 @@ function attachGuestEventListeners() {
       if (ban) {
         alert(`Ваш аккаунт заблокирован. Причина: ${ban.reason || 'не указана'}`);
         await signOut(auth);
+      } else {
+        // Убедимся, что профиль существует
+        await getUserProfile(userCredential.user);
+        // Очищаем поля
+        emailInput.value = '';
+        passInput.value = '';
       }
     } catch (error) {
       alert('Ошибка входа: ' + error.message);
     }
   });
 
+  // Регистрация (исправленная логика)
   signupBtn.addEventListener('click', async () => {
     if (signupBtn.textContent === 'Регистрация') {
+      // Показываем поле для никнейма
       usernameInput.style.display = 'inline-block';
       signupBtn.textContent = 'Подтвердить';
     } else {
       const username = usernameInput.value.trim();
       if (!username) { alert('Введите никнейм'); return; }
+      const email = emailInput.value.trim();
+      const password = passInput.value;
+      if (!email || !password) { alert('Введите email и пароль'); return; }
+
+      // Блокируем кнопку на время операции
+      signupBtn.disabled = true;
+      signupBtn.textContent = '⏳ Создание...';
+
       try {
-        const userCredential = await createUserWithEmailAndPassword(auth, emailInput.value, passInput.value);
+        // Создаём пользователя
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const user = userCredential.user;
         const ip = await getUserIP();
-        await setDoc(doc(db, "users", userCredential.user.uid), {
-          uid: userCredential.user.uid,
-          email: emailInput.value,
+
+        // Создаём документ в Firestore
+        await setDoc(doc(db, "users", user.uid), {
+          uid: user.uid,
+          email: user.email,
           username: username,
           createdAt: serverTimestamp(),
           ip: ip
         });
-        await updateProfile(userCredential.user, { displayName: username });
+
+        // Сбрасываем форму регистрации
+        usernameInput.style.display = 'none';
+        usernameInput.value = '';
+        emailInput.value = '';
+        passInput.value = '';
+        signupBtn.textContent = 'Регистрация';
+        
+        // Небольшая задержка для обновления UI
+        setTimeout(() => {
+          // onAuthStateChanged сам обновит интерфейс, но можно и явно
+          renderAuthUI(user);
+          loadPosts();
+        }, 100);
       } catch (error) {
+        console.error('Registration error:', error);
         alert('Ошибка регистрации: ' + error.message);
+        // Возвращаем кнопку в исходное состояние
+        usernameInput.style.display = 'none';
+        signupBtn.textContent = 'Регистрация';
+      } finally {
+        signupBtn.disabled = false;
       }
     }
   });
 
+  // Google Login
   googleBtn.addEventListener('click', async () => {
     const provider = new GoogleAuthProvider();
     try {
@@ -254,6 +297,7 @@ function attachGuestEventListeners() {
   });
 }
 
+// Загрузка постов
 async function loadPosts() {
   postsContainer.innerHTML = 'Загрузка...';
   const user = auth.currentUser;

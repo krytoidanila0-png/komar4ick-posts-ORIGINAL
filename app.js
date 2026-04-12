@@ -375,14 +375,22 @@ notifBtn.addEventListener('click', async () => {
 });
 
 // Закрыть модалку оповещений
-closeNotifModal.addEventListener('click', () => {
-  notifModal.style.display = 'none';
+if (closeNotifModal) {
+  closeNotifModal.addEventListener('click', () => {
+    notifModal.style.display = 'none';
+  });
+}
+// Закрытие по клику вне области
+window.addEventListener('click', (e) => {
+  if (e.target === notifModal) notifModal.style.display = 'none';
 });
 
 // Создать оповещение
-createNotifBtn.addEventListener('click', () => {
-  createNotification(notifTitle.value.trim(), notifContent.value.trim());
-});
+if (createNotifBtn) {
+  createNotifBtn.addEventListener('click', () => {
+    createNotification(notifTitle.value.trim(), notifContent.value.trim());
+  });
+}
 
 // ==================== ПОСТЫ ====================
 async function loadPosts() {

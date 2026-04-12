@@ -25,6 +25,16 @@
         <button id="show-mutes-btn">🔇 Список мутов</button>
       </div>
       <div id="admin-lists"></div>
+
+      <!-- Поиск пользователя по email -->
+      <div id="user-search-section" style="margin-top: 30px; border-top: 1px solid #0f0; padding-top: 20px;">
+        <h3>🔍 Поиск пользователя по email</h3>
+        <div style="display: flex; gap: 10px; margin: 15px 0;">
+          <input type="email" id="search-email" placeholder="Email пользователя" style="flex: 1;">
+          <button id="search-user-btn">Найти</button>
+        </div>
+        <div id="search-results" style="max-height: 200px; overflow-y: auto;"></div>
+      </div>
     </section>
 
     <section id="add-post-section" style="display: none;">
@@ -52,9 +62,7 @@
     <div class="modal-content" style="width: 500px; max-width: 90%;">
       <span class="close-notifications-modal" style="float: right; font-size: 28px; cursor: pointer;">&times;</span>
       <h3>📢 Технические оповещения</h3>
-      <div id="notifications-list" style="max-height: 400px; overflow-y: auto; margin: 15px 0;">
-        Загрузка...
-      </div>
+      <div id="notifications-list" style="max-height: 400px; overflow-y: auto; margin: 15px 0;">Загрузка...</div>
       <div id="notifications-admin-form" style="display: none; border-top: 1px solid #0f0; padding-top: 15px;">
         <input type="text" id="notif-title" placeholder="Заголовок" style="width: 100%; margin-bottom: 10px;">
         <textarea id="notif-content" placeholder="Текст оповещения..." rows="2" style="width: 100%;"></textarea>
@@ -63,7 +71,7 @@
     </div>
   </div>
 
-  <!-- Модальное окно для управления пользователем (бан/мут) -->
+  <!-- Модальное окно для управления пользователем (бан/мут/удаление) -->
   <div id="mod-modal" class="modal" style="display: none;">
     <div class="modal-content">
       <span class="close-modal">&times;</span>
@@ -72,7 +80,13 @@
       <div class="modal-actions">
         <button id="modal-ban-btn">🚫 Забанить</button>
         <button id="modal-mute-btn">🔇 Замутить</button>
+        <button id="modal-delete-account-btn">🗑️ Удалить аккаунт (очистить данные)</button>
         <button id="modal-delete-comments-btn">🗑️ Удалить комментарии</button>
+      </div>
+      <div id="modal-ban-reason" style="display: none; margin-top: 10px;">
+        <label>Причина бана (обязательно):</label>
+        <input type="text" id="ban-reason" placeholder="Нарушение правил...">
+        <button id="apply-ban-btn">Подтвердить бан</button>
       </div>
       <div id="modal-mute-duration" style="display: none;">
         <label>Длительность мута (минуты):</label>
@@ -82,7 +96,7 @@
     </div>
   </div>
 
-  <div id="version-badge">v4.8.8 Beta</div>
+  <div id="version-badge">v4.9.1 Beta</div>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-app.js";

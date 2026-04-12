@@ -473,3 +473,57 @@ button:hover {
     right: 10px;
   }
 }
+/* ========== ОПОВЕЩЕНИЯ ========== */
+#announcements-section {
+  margin-bottom: 30px;
+  border: 1px solid #0f0;
+  padding: 15px;
+  background: rgba(0, 15, 0, 0.4);
+}
+
+.announcements-list {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.announcement-item {
+  border-left: 3px solid #0f0;
+  padding: 10px 15px;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.announcement-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-size: 0.9rem;
+}
+
+.announcement-header strong {
+  color: #0f0;
+  font-size: 1.1rem;
+}
+
+.announcement-date {
+  color: #8f8;
+  font-size: 0.7rem;
+}
+
+.announcement-content {
+  color: #cfc;
+  font-size: 0.9rem;
+  white-space: pre-wrap;
+}
+
+.delete-announcement-btn {
+  background: transparent;
+  border: none;
+  color: #f00;
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 0 5px;
+}

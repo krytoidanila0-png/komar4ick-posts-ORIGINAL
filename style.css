@@ -21,7 +21,6 @@ body {
   100% { opacity: 1; }
 }
 
-/* ========== МАТРИЦА ========== */
 .matrix-bg {
   position: fixed;
   top: 0;
@@ -48,7 +47,6 @@ body {
   100% { transform: translateY(100vh); }
 }
 
-/* ========== ШАПКА ========== */
 header {
   display: flex;
   justify-content: space-between;
@@ -96,7 +94,6 @@ h1::before {
   100% { transform: skew(0deg); }
 }
 
-/* ========== КНОПКА-КОЛОКОЛЬЧИК ========== */
 .bell-btn {
   background: transparent;
   border: none;
@@ -111,7 +108,6 @@ h1::before {
   transform: scale(1.1);
 }
 
-/* ========== ЗАГОЛОВКИ ========== */
 h2 {
   margin-bottom: 15px;
   border-left: 3px solid #0f0;
@@ -121,7 +117,6 @@ h2 {
   letter-spacing: 2px;
 }
 
-/* ========== ФОРМЫ, ПОЛЯ, КНОПКИ ========== */
 input, textarea, button {
   background: #0a0f0a;
   border: 1px solid #0f0;
@@ -159,7 +154,6 @@ button:hover {
   border-color: #0f0;
 }
 
-/* ========== АВТОРИЗАЦИЯ ========== */
 #auth-area {
   display: flex;
   gap: 10px;
@@ -168,7 +162,6 @@ button:hover {
   font-size: 0.9rem;
 }
 
-/* ========== КАРТОЧКИ ПОСТОВ ========== */
 .post-card {
   border: 1px solid #0f0;
   padding: 18px;
@@ -280,7 +273,6 @@ button:hover {
   box-shadow: 0 0 8px #0f0, inset 0 0 5px #000;
 }
 
-/* ========== КОММЕНТАРИИ ========== */
 .comments-section {
   margin-top: 20px;
   border-top: 1px dashed #0f0;
@@ -349,7 +341,6 @@ button:hover {
   margin-top: 10px;
 }
 
-/* ========== ФОРМА ДОБАВЛЕНИЯ ПОСТА ========== */
 #add-post-section {
   margin-bottom: 35px;
   padding: 25px;
@@ -407,7 +398,6 @@ button:hover {
   border: none;
 }
 
-/* ========== АДМИН-ПАНЕЛЬ ========== */
 #admin-panel {
   margin-bottom: 25px;
   padding: 15px;
@@ -427,7 +417,6 @@ button:hover {
   font-size: 0.8rem;
 }
 
-/* ========== МОДАЛЬНЫЕ ОКНА (общие) ========== */
 .modal {
   position: fixed;
   z-index: 1000;
@@ -465,7 +454,6 @@ button:hover {
   margin: 20px 0;
 }
 
-/* ========== ОПОВЕЩЕНИЯ В МОДАЛКЕ ========== */
 .notifications-list-modal {
   display: flex;
   flex-direction: column;
@@ -518,7 +506,6 @@ button:hover {
   border-top: 1px solid #0f0;
 }
 
-/* ========== ВЕРСИЯ ========== */
 #version-badge {
   position: fixed;
   bottom: 15px;
@@ -538,7 +525,6 @@ button:hover {
   pointer-events: none;
 }
 
-/* ========== АДАПТИВ ========== */
 @media (max-width: 600px) {
   header {
     flex-direction: column;

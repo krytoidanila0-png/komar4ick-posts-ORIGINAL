@@ -51,12 +51,15 @@ const muteDurationInput = document.getElementById('mute-duration');
 const applyMuteBtn = document.getElementById('apply-mute-btn');
 const closeModalBtn = document.querySelector('.close-modal');
 
-// Новые элементы для оповещений
-const announcementsContainer = document.getElementById('announcements-container');
-const adminAnnouncementForm = document.getElementById('admin-announcement-form');
-const announcementTitle = document.getElementById('announcement-title');
-const announcementContent = document.getElementById('announcement-content');
-const createAnnouncementBtn = document.getElementById('create-announcement-btn');
+// Элементы для оповещений (модалка)
+const notifBtn = document.getElementById('notifications-btn');
+const notifModal = document.getElementById('notifications-modal');
+const closeNotifModal = document.querySelector('.close-notifications-modal');
+const notificationsList = document.getElementById('notifications-list');
+const notifAdminForm = document.getElementById('notifications-admin-form');
+const notifTitle = document.getElementById('notif-title');
+const notifContent = document.getElementById('notif-content');
+const createNotifBtn = document.getElementById('create-notif-btn');
 
 let currentTargetUser = null;
 
@@ -186,7 +189,6 @@ async function renderAuthUI(user) {
     const admin = isAdmin(user);
     addPostSection.style.display = admin ? 'block' : 'none';
     adminPanel.style.display = admin ? 'block' : 'none';
-    if (adminAnnouncementForm) adminAnnouncementForm.style.display = admin ? 'block' : 'none';
   } else {
     authArea.innerHTML = `
       <div id="auth-forms">
@@ -200,7 +202,6 @@ async function renderAuthUI(user) {
     `;
     addPostSection.style.display = 'none';
     adminPanel.style.display = 'none';
-    if (adminAnnouncementForm) adminAnnouncementForm.style.display = 'none';
     attachGuestEventListeners();
   }
 }
@@ -296,53 +297,52 @@ function attachGuestEventListeners() {
   });
 }
 
-// ==================== ОПОВЕЩЕНИЯ ====================
-async function loadAnnouncements() {
-  if (!announcementsContainer) return;
-  announcementsContainer.innerHTML = 'Загрузка...';
+// ==================== ОПОВЕЩЕНИЯ В МОДАЛКЕ ====================
+async function loadNotificationsToModal() {
+  notificationsList.innerHTML = 'Загрузка...';
   try {
     const q = query(collection(db, "announcements"), orderBy("createdAt", "desc"));
     const snapshot = await getDocs(q);
     if (snapshot.empty) {
-      announcementsContainer.innerHTML = '<p>Нет оповещений.</p>';
+      notificationsList.innerHTML = '<p>Нет оповещений.</p>';
       return;
     }
-    let html = '<div class="announcements-list">';
+    let html = '<div class="notifications-list-modal">';
     snapshot.forEach(doc => {
       const data = doc.data();
       const date = data.createdAt ? new Date(data.createdAt.toDate()).toLocaleString() : '';
       html += `
-        <div class="announcement-item" data-id="${doc.id}">
-          <div class="announcement-header">
+        <div class="notification-item">
+          <div class="notification-header">
             <strong>📢 ${escapeHtml(data.title)}</strong>
-            <span class="announcement-date">${date}</span>
-            ${isAdmin(auth.currentUser) ? `<button class="delete-announcement-btn" data-id="${doc.id}">🗑️</button>` : ''}
+            <span class="notification-date">${date}</span>
+            ${isAdmin(auth.currentUser) ? `<button class="delete-notif-btn" data-id="${doc.id}">🗑️</button>` : ''}
           </div>
-          <div class="announcement-content">${escapeHtml(data.content)}</div>
+          <div class="notification-content">${escapeHtml(data.content)}</div>
         </div>
       `;
     });
     html += '</div>';
-    announcementsContainer.innerHTML = html;
+    notificationsList.innerHTML = html;
     
     if (isAdmin(auth.currentUser)) {
-      document.querySelectorAll('.delete-announcement-btn').forEach(btn => {
+      document.querySelectorAll('.delete-notif-btn').forEach(btn => {
         btn.addEventListener('click', async (e) => {
           const id = btn.dataset.id;
           if (confirm('Удалить оповещение?')) {
             await deleteDoc(doc(db, "announcements", id));
-            loadAnnouncements();
+            loadNotificationsToModal();
           }
         });
       });
     }
   } catch (error) {
     console.error(error);
-    announcementsContainer.innerHTML = '<p>Ошибка загрузки оповещений.</p>';
+    notificationsList.innerHTML = '<p>Ошибка загрузки оповещений.</p>';
   }
 }
 
-async function createAnnouncement(title, content) {
+async function createNotification(title, content) {
   if (!title || !content) return alert('Заполните заголовок и текст');
   const user = auth.currentUser;
   if (!isAdmin(user)) return alert('Нет прав');
@@ -353,14 +353,36 @@ async function createAnnouncement(title, content) {
       createdAt: serverTimestamp(),
       createdBy: user.email
     });
-    announcementTitle.value = '';
-    announcementContent.value = '';
-    loadAnnouncements();
+    notifTitle.value = '';
+    notifContent.value = '';
+    loadNotificationsToModal();
     alert('Оповещение опубликовано');
   } catch (error) {
     alert('Ошибка: ' + error.message);
   }
 }
+
+// Открыть модалку оповещений
+notifBtn.addEventListener('click', async () => {
+  notifModal.style.display = 'flex';
+  await loadNotificationsToModal();
+  const user = auth.currentUser;
+  if (isAdmin(user)) {
+    notifAdminForm.style.display = 'block';
+  } else {
+    notifAdminForm.style.display = 'none';
+  }
+});
+
+// Закрыть модалку оповещений
+closeNotifModal.addEventListener('click', () => {
+  notifModal.style.display = 'none';
+});
+
+// Создать оповещение
+createNotifBtn.addEventListener('click', () => {
+  createNotification(notifTitle.value.trim(), notifContent.value.trim());
+});
 
 // ==================== ПОСТЫ ====================
 async function loadPosts() {
@@ -735,16 +757,8 @@ addPostForm.addEventListener('submit', async (e) => {
   } catch (error) { alert('Ошибка: ' + error.message); }
 });
 
-// ==================== КНОПКА СОЗДАНИЯ ОПОВЕЩЕНИЯ ====================
-if (createAnnouncementBtn) {
-  createAnnouncementBtn.addEventListener('click', () => {
-    createAnnouncement(announcementTitle.value.trim(), announcementContent.value.trim());
-  });
-}
-
 // ==================== СЛУШАТЕЛЬ АВТОРИЗАЦИИ ====================
 onAuthStateChanged(auth, (user) => {
   renderAuthUI(user);
   loadPosts();
-  loadAnnouncements();
 });

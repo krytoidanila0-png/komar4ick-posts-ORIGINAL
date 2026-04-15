@@ -40,6 +40,8 @@ const postsContainer = document.getElementById('posts-container');
 const addPostForm = document.getElementById('add-post-form');
 const mediaUrlInput = document.getElementById('media-url');
 const mediaPreview = document.getElementById('media-preview');
+const postMediaFile = document.getElementById('post-media-file');
+const uploadProgressDiv = document.getElementById('upload-progress');
 const adminPanel = document.getElementById('admin-panel');
 const adminLists = document.getElementById('admin-lists');
 const modal = document.getElementById('mod-modal');
@@ -72,7 +74,6 @@ const searchUserBtn = document.getElementById('search-user-btn');
 const searchResultsDiv = document.getElementById('search-results');
 
 let currentTargetUser = null;
-let currentSearchResults = [];
 
 // ==================== МАТРИЦА ====================
 function createMatrixRain() {
@@ -132,27 +133,17 @@ async function getUserProfileById(uid) {
   return snap.exists() ? snap.data() : null;
 }
 
-async function getUserProfileByEmail(email) {
-  const usersRef = collection(db, "users");
-  const q = query(usersRef, where("email", "==", email));
-  const snapshot = await getDocs(q);
-  if (snapshot.empty) return null;
-  return { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
-}
-
 // ==================== БАН И МУТ ====================
 async function isUserBanned(uid, email, ip) {
   const bansSnapshot = await getDocs(collection(db, "bans"));
   for (const doc of bansSnapshot.docs) {
     const ban = doc.data();
     if (ban.uid === uid || ban.email === email || (ip && ban.ip === ip)) {
-      // Проверка на автоудаление через 30 дней
       if (ban.bannedAt && ban.bannedAt.toDate) {
         const daysSinceBan = (Date.now() - ban.bannedAt.toDate().getTime()) / (1000*3600*24);
         if (daysSinceBan >= 30) {
-          // Автоматически удаляем аккаунт
           await deleteUserAccountByUid(uid, email);
-          return null; // бан снят, аккаунт удалён
+          return null;
         }
       }
       return ban;
@@ -169,31 +160,25 @@ async function isUserMuted(uid) {
   return mute.expiresAt.toMillis() > Date.now();
 }
 
-// Полное удаление пользователя из Firestore
 async function deleteUserAccountByUid(uid, email) {
   if (!uid) return;
-  // 1. Удаляем комментарии
   const commentsSnapshot = await getDocs(query(collection(db, "comments"), where("userId", "==", uid)));
   const batch = writeBatch(db);
   commentsSnapshot.forEach(doc => batch.delete(doc.ref));
   await batch.commit();
   
-  // 2. Удаляем лайки
   const likesSnapshot = await getDocs(query(collection(db, "likes"), where("userId", "==", uid)));
   const batch2 = writeBatch(db);
   likesSnapshot.forEach(doc => batch2.delete(doc.ref));
   await batch2.commit();
   
-  // 3. Удаляем посты пользователя (если он не админ)
   const postsSnapshot = await getDocs(query(collection(db, "posts"), where("authorId", "==", uid)));
   const batch3 = writeBatch(db);
   postsSnapshot.forEach(doc => batch3.delete(doc.ref));
   await batch3.commit();
   
-  // 4. Удаляем документ пользователя
   await deleteDoc(doc(db, "users", uid));
   
-  // 5. Удаляем записи банов и мутов этого пользователя
   const bansSnapshot = await getDocs(query(collection(db, "bans"), where("uid", "==", uid)));
   const batch4 = writeBatch(db);
   bansSnapshot.forEach(doc => batch4.delete(doc.ref));
@@ -228,6 +213,33 @@ function renderMediaPreviewFromUrl(url) {
   }
 }
 mediaUrlInput.addEventListener('input', (e) => renderMediaPreviewFromUrl(e.target.value.trim()));
+
+// ==================== ЗАГРУЗКА НА IMGBB ====================
+async function uploadToImgBB(file) {
+  const formData = new FormData();
+  formData.append('image', file);
+  const apiKey = 'e248a85eab4d345759917e0ff2490ff6';
+  const url = `https://api.imgbb.com/1/upload?key=${apiKey}`;
+  
+  uploadProgressDiv.style.display = 'block';
+  
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      body: formData
+    });
+    const data = await response.json();
+    if (data.success) {
+      uploadProgressDiv.style.display = 'none';
+      return data.data.url;
+    } else {
+      throw new Error(data.error?.message || 'Ошибка загрузки');
+    }
+  } catch (error) {
+    uploadProgressDiv.style.display = 'none';
+    throw error;
+  }
+}
 
 // ==================== UI АВТОРИЗАЦИИ ====================
 async function renderAuthUI(user) {
@@ -552,7 +564,7 @@ modalDeleteCommentsBtn.onclick = async () => {
 closeModalBtn.onclick = () => modal.style.display = 'none';
 window.onclick = (e) => { if (e.target == modal) modal.style.display = 'none'; };
 
-// ==================== ПОСТЫ, КОММЕНТАРИИ, ЛАЙКИ (без изменений) ====================
+// ==================== ПОСТЫ ====================
 async function loadPosts() {
   postsContainer.innerHTML = 'Загрузка...';
   const user = auth.currentUser;
@@ -844,26 +856,45 @@ document.getElementById('show-mutes-btn')?.addEventListener('click', async () =>
   });
 });
 
-// ==================== СОЗДАНИЕ ПОСТА ====================
+// ==================== СОЗДАНИЕ ПОСТА (с ImgBB) ====================
 addPostForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const user = auth.currentUser;
   if (!isAdmin(user)) { alert('Только администратор может публиковать'); return; }
+  
   const title = document.getElementById('post-title').value.trim();
   const content = document.getElementById('post-content').value.trim();
   const mediaUrl = mediaUrlInput.value.trim();
-  if (!title || !content) return;
+  const file = postMediaFile.files[0];
+  
+  if (!title || !content) { alert('Заполните заголовок и текст'); return; }
+  
+  let finalMediaUrl = mediaUrl || null;
+  
+  if (file) {
+    try {
+      finalMediaUrl = await uploadToImgBB(file);
+    } catch (error) {
+      alert('Ошибка загрузки изображения: ' + error.message);
+      return;
+    }
+  }
+  
   try {
     await addDoc(collection(db, "posts"), {
-      title, content, mediaUrl: mediaUrl || null,
+      title, content,
+      mediaUrl: finalMediaUrl,
       authorEmail: user.email,
       authorId: user.uid,
       createdAt: serverTimestamp()
     });
     addPostForm.reset();
     mediaPreview.innerHTML = '';
+    postMediaFile.value = '';
     loadPosts();
-  } catch (error) { alert('Ошибка: ' + error.message); }
+  } catch (error) {
+    alert('Ошибка публикации: ' + error.message);
+  }
 });
 
 // ==================== СЛУШАТЕЛЬ АВТОРИЗАЦИИ ====================

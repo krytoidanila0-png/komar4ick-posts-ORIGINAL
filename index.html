@@ -25,8 +25,6 @@
         <button id="show-mutes-btn">🔇 Список мутов</button>
       </div>
       <div id="admin-lists"></div>
-
-      <!-- Поиск пользователя по email -->
       <div id="user-search-section" style="margin-top: 30px; border-top: 1px solid #0f0; padding-top: 20px;">
         <h3>🔍 Поиск пользователя по email</h3>
         <div style="display: flex; gap: 10px; margin: 15px 0;">
@@ -46,6 +44,11 @@
           <label for="media-url">🔗 Ссылка на фото или видео</label>
           <input type="url" id="media-url" placeholder="https://...">
           <div id="media-preview" class="media-preview"></div>
+        </div>
+        <div class="media-upload-area">
+          <label>📂 Или загрузите изображение/видео с компьютера</label>
+          <input type="file" id="post-media-file" accept="image/*,video/*">
+          <div id="upload-progress" style="display: none; margin-top: 5px; color: #0f0;">Загрузка...</div>
         </div>
         <button type="submit">Опубликовать</button>
       </form>
@@ -71,7 +74,7 @@
     </div>
   </div>
 
-  <!-- Модальное окно для управления пользователем (бан/мут/удаление) -->
+  <!-- Модальное окно для управления пользователем -->
   <div id="mod-modal" class="modal" style="display: none;">
     <div class="modal-content">
       <span class="close-modal">&times;</span>
@@ -96,7 +99,7 @@
     </div>
   </div>
 
-  <div id="version-badge">v4.9.1 Beta</div>
+  <div id="version-badge">v4.9.3 Beta</div>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-app.js";
